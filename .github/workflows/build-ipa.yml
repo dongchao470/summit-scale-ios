@@ -93,16 +93,19 @@ jobs:
           lipo -info "$APP/SummitScale" || true
           echo "--- size ---"
           du -sh "$APP"
-          zip -qry SummitScale-0.2.0-unsigned.ipa Payload
-          ls -lh SummitScale-0.2.0-unsigned.ipa
-          shasum -a 256 SummitScale-0.2.0-unsigned.ipa | tee SummitScale-0.2.0-unsigned.sha256
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
+          BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist")"
+          IPA="SummitScale-${VERSION}-build${BUILD}-unsigned.ipa"
+          zip -qry "$IPA" Payload
+          ls -lh "$IPA"
+          shasum -a 256 "$IPA" | tee "${IPA%.ipa}.sha256"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: SummitScale-ipa
           path: |
-            SummitScale-0.2.0-unsigned.ipa
-            SummitScale-0.2.0-unsigned.sha256
+            SummitScale-*-unsigned.ipa
+            SummitScale-*-unsigned.sha256
           if-no-files-found: error
           retention-days: 30
