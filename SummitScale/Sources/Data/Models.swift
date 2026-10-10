@@ -186,3 +186,12 @@ extension ActivityEntry {
         title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? kindValue.title : title
     }
 }
+
+// MARK: - 列表渲染
+
+/// SwiftUI 的 ForEach 要求元素可辨识，这几个模型的 id 本来就是 UUID。
+extension WeightEntry: Identifiable {}
+
+extension FoodEntry: Identifiable {}
+
+extension ActivityEntry: Identifiable {}

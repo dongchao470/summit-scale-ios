@@ -150,7 +150,7 @@ struct ReviewView: View {
 
     @ViewBuilder
     private var summarySection: some View {
-        Section("区间汇总") {
+        Section {
             if let change = weightChange {
                 summaryRow("体重变化", value: Fmt.signedKg(change), unit: "kg")
             }
@@ -159,6 +159,8 @@ struct ReviewView: View {
             }
             summaryRow("运动消耗合计", value: Fmt.kcal(totalBurn), unit: "kcal")
             summaryRow("记了几天", value: "\(dailyIntake.count)", unit: "天")
+        } header: {
+            Text("区间汇总")
         } footer: {
             Text("热量是估算值，按公式推的，不是医疗建议。")
         }

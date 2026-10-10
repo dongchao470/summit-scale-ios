@@ -46,7 +46,7 @@ struct ActivityEditorView: View {
                     DatePicker("时间", selection: $date, displayedComponents: [.date, .hourAndMinute])
                 }
 
-                Section("数据") {
+                Section {
                     HStack {
                         Text("时长")
                         Spacer()
@@ -86,6 +86,8 @@ struct ActivityEditorView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                } header: {
+                    Text("数据")
                 }
 
                 Section {
