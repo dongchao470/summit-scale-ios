@@ -71,14 +71,20 @@ struct ActivityEditorView: View {
     }
 
     private var dataSection: some View {
-        Section("数据") {
+        Section(header: Text("数据")) {
             durationRow
-            if kind.supportsDistance {
-                distanceRow
-            }
-            if kind == .hiking {
-                elevationRow
-            }
+            optionalRows
+        }
+    }
+
+    /// 距离和爬升只在对应的运动类型下出现。
+    @ViewBuilder
+    private var optionalRows: some View {
+        if kind.supportsDistance {
+            distanceRow
+        }
+        if kind == .hiking {
+            elevationRow
         }
     }
 
