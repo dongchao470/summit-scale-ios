@@ -40,6 +40,11 @@ jobs:
           fi
           xcodegen --version
 
+      - name: Verify sources
+        run: |
+          python3 tools/verify_food.py
+          python3 tools/verify_autofill.py
+
       - name: Generate project
         run: xcodegen generate --spec project.yml
 

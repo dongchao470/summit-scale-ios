@@ -58,6 +58,8 @@ extension Persistence {
 
     /// 一键入账：把套餐里的东西整份写进某一天。
     /// `portions` 支持 1.5 份这种缩放；返回写入的条数。
+    ///
+    /// 入账的同时打上「这天已记过」的标记：手动记过的套餐，到点不该再被自动补一遍。
     @discardableResult
     func applyTemplate(
         _ template: MealTemplate,
@@ -65,7 +67,7 @@ extension Persistence {
         meal: MealType? = nil,
         portions: Double = 1
     ) -> Int {
-        writeItems(
+        let written = writeItems(
             template.items,
             templateName: template.name,
             meal: meal ?? template.meal,
@@ -73,6 +75,10 @@ extension Persistence {
             portions: portions,
             externalID: nil
         )
+        if written > 0 {
+            markAutoFilled(template: template, on: date)
+        }
+        return written
     }
 
     @discardableResult
@@ -112,15 +118,33 @@ extension Persistence {
 
     // MARK: - 到点自动填
 
-    static func autoFillKey(template: MealTemplate, on date: Date) -> String {
+    /// 套餐入账去重用的日期戳。
+    private static func dayStamp(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd"
-        return "template:\(template.id.uuidString):\(formatter.string(from: date))"
+        return formatter.string(from: date)
     }
 
-    /// 这个套餐当天是不是已经自动填过了。
+    /// 自动补录写进条目的 externalID，方便排查「这条是哪次补的」。
+    static func autoFillKey(template: MealTemplate, on date: Date) -> String {
+        "template:\(template.id.uuidString):\(Self.dayStamp(date))"
+    }
+
+    /// 「这个套餐这天已经入过账」的独立标记。
+    ///
+    /// 单独记一份，而不是只靠条目里的 externalID：用户自己手动记过之后，
+    /// 或者把自动补的那几条删掉之后，都不该在下次启动时被再补一遍。
+    private static func autoFillFlagKey(template: MealTemplate, on date: Date) -> String {
+        "autofill.\(template.id.uuidString).\(Self.dayStamp(date))"
+    }
+
+    /// 这个套餐当天是不是已经记过了，手动一键加也算。
     func hasAutoFilled(template: MealTemplate, on date: Date) -> Bool {
+        if UserDefaults.standard.bool(forKey: Self.autoFillFlagKey(template: template, on: date)) {
+            return true
+        }
+        // 兼容 0.3.1 之前只写了 externalID 的旧数据。
         let request = FoodEntry.fetchRequest()
         request.predicate = NSPredicate(
             format: "externalID == %@",
@@ -128,6 +152,11 @@ extension Persistence {
         )
         request.fetchLimit = 1
         return ((try? container.viewContext.fetch(request))?.isEmpty == false)
+    }
+
+    /// 记下「这个套餐这天已经入过账」。
+    private func markAutoFilled(template: MealTemplate, on date: Date) {
+        UserDefaults.standard.set(true, forKey: Self.autoFillFlagKey(template: template, on: date))
     }
 
     /// 补填当天已经到点、但还没填过的套餐。
@@ -157,6 +186,7 @@ extension Persistence {
                 portions: 1,
                 externalID: Self.autoFillKey(template: template, on: now)
             )
+            markAutoFilled(template: template, on: now)
             filled.append(template.name)
         }
         return filled
