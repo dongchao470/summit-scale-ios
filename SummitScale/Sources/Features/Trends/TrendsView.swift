@@ -121,7 +121,7 @@ struct TrendsView: View {
     }
 
     private var calorieDomain: ClosedRange<Double> {
-        let peak = max(dailyIntake.map { $0.value }.max() ?? 0, budget?.intakeKcal ?? 0)
+        let peak = max(dailyIntake.map { $0.value }.max() ?? 0, budget?.intakeTarget ?? 0)
         return 0...(max(peak * 1.15, 500))
     }
 
@@ -176,7 +176,7 @@ struct TrendsView: View {
                 )
             }
 
-            Text(budget.map { "每日摄入目标 \(Fmt.kcal($0.intakeKcal)) kcal" } ?? "先完成档案，才会算出目标")
+            Text(budget.map { "每日摄入目标 \(Fmt.kcal($0.intakeTarget)) kcal" } ?? "先完成档案，才会算出目标")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -261,7 +261,7 @@ struct TrendsView: View {
                             y: .value("摄入", item.value)
                         )
                         .foregroundStyle(
-                            item.value > (budget?.intakeKcal ?? .infinity)
+                            item.value > (budget?.intakeTarget ?? .infinity)
                                 ? Theme.warning
                                 : Theme.accent.opacity(0.85)
                         )
