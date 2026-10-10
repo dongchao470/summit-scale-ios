@@ -64,8 +64,11 @@ struct TrendsView: View {
     private var weightPoints: [DayValue] {
         let calendar = Calendar.current
         var byDay: [Date: Double] = [:]
-        for entry in weights where entry.date >= startDay where byDay[calendar.startOfDay(for: entry.date)] == nil {
-            byDay[calendar.startOfDay(for: entry.date)] = entry.kilograms
+        for entry in weights where entry.date >= startDay {
+            let day = calendar.startOfDay(for: entry.date)
+            if byDay[day] == nil {
+                byDay[day] = entry.kilograms
+            }
         }
         return byDay.map { DayValue(day: $0.key, value: $0.value) }.sorted { $0.day < $1.day }
     }
@@ -242,7 +245,7 @@ struct TrendsView: View {
                 CardTitle(text: "每日摄入", symbol: "fork.knife")
                 Spacer()
                 if let budget = budget {
-                    Text("目标线 \(Fmt.kcal(budget.intakeKcal))")
+                    Text("目标线 \(Fmt.kcal(budget.intakeTarget))")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -266,7 +269,7 @@ struct TrendsView: View {
                     }
 
                     if let budget = budget {
-                        RuleMark(y: .value("目标", budget.intakeKcal))
+                        RuleMark(y: .value("目标", budget.intakeTarget))
                             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
                             .foregroundStyle(Theme.success)
                     }
@@ -305,7 +308,7 @@ struct TrendsView: View {
                                 Text(entry.displayTitle)
                                     .font(.subheadline)
                                     .foregroundColor(.primary)
-                                Text(Fmt.dayText(entry.date))
+                                Text(Fmt.relativeDay(entry.date))
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }

@@ -96,7 +96,7 @@ struct TodayView: View {
             .background(Theme.pageBackground)
             .navigationTitle("今日")
             .sheet(isPresented: $showFoodSheet) {
-                AddFoodSheet(defaultMeal: presetMeal ?? .current)
+                AddFoodSheet(defaultMeal: presetMeal ?? AddFoodSheet.suggestedMeal())
                     .onDisappear { presetMeal = nil }
             }
             .sheet(isPresented: $showActivitySheet) {
@@ -321,7 +321,7 @@ struct TodayView: View {
 
     private func foodRow(_ entry: FoodEntry) -> some View {
         HStack(spacing: 10) {
-            FoodThumbnail(urlString: entry.imageURL, size: 36)
+            FoodThumb(urlString: entry.imageURL, size: 36)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)

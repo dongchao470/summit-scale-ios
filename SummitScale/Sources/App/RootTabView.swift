@@ -40,13 +40,19 @@ enum QuickAction: String, Identifiable, CaseIterable {
 struct RootTabView: View {
     @Environment(\.scenePhase) private var scenePhase
 
+    @FetchRequest(
+        sortDescriptors: WeightEntry.dateDescending,
+        animation: .default
+    )
+    private var weights: FetchedResults<WeightEntry>
+
     @State private var selection = 0
     @State private var quickAction: QuickAction?
     @State private var isMenuOpen = false
     @State private var autoFillNotice: String?
 
     private var bodyKilograms: Double {
-        Persistence.shared.latestWeightKilograms() ?? 60
+        weights.first?.kilograms ?? 60
     }
 
     var body: some View {
