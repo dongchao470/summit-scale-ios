@@ -1,0 +1,11 @@
+build/
+DerivedData/
+*.xcuserdatad
+xcuserdata/
+*.xcworkspace/xcshareddata/
+.DS_Store
+*.ipa
+Payload/
+SummitScale.xcodeproj/
+__pycache__/
+*.pyc
