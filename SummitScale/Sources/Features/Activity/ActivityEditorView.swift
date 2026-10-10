@@ -80,7 +80,7 @@ struct ActivityEditorView: View {
     /// 距离和爬升只在对应的运动类型下出现。
     @ViewBuilder
     private var optionalRows: some View {
-        if kind.supportsDistance {
+        if kind.wantsRoute {
             distanceRow
         }
         if kind == .hiking {
