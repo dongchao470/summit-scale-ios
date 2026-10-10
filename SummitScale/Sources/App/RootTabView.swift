@@ -71,6 +71,20 @@ struct RootTabView: View {
                     .tag(2)
             }
 
+            if isMenuOpen {
+                // 展开快捷记录时把整页压暗模糊，点空白处收起，避免误点到下面的卡片。
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                            isMenuOpen = false
+                        }
+                    }
+            }
+
             quickAdd
                 .padding(.trailing, 18)
                 .padding(.bottom, 62)

@@ -1,13 +1,11 @@
 import Foundation
 
-/// 联网搜到的食物。数据来自 Open Food Facts（免费、开放、无需 key）。
-///
-/// 现实情况：中文站点对**包装食品**覆盖还可以（有图、有条码、有营养表），
-/// 家常菜几乎查不到，所以它只是本地库的补充，而不是替代。
+/// 联网搜到的食物。
 struct RemoteFood: Identifiable, Hashable {
-    /// 条码，可能为空。
+    /// 唯一键：下厨房是菜谱 ID，Open Food Facts 是条码。
     let id: String
     let name: String
+    /// 来源名，列表里当副标题前缀用，比如「下厨房」。
     let brand: String?
     let imageURL: String?
     let kcalPer100: Double
@@ -15,7 +13,7 @@ struct RemoteFood: Identifiable, Hashable {
     let carbsPer100: Double
     let fatPer100: Double
 
-    /// 列表里的副标题：品牌 + 每 100 克热量。
+    /// 列表里的副标题：来源 + 每 100 克热量。
     var subtitle: String {
         var parts: [String] = []
         if let brand = brand, !brand.isEmpty {
@@ -24,7 +22,8 @@ struct RemoteFood: Identifiable, Hashable {
         if kcalPer100 > 0 {
             parts.append("每 100 克 \(Int(kcalPer100.rounded())) 千卡")
         } else {
-            parts.append("没有营养数据，选了自己填热量")
+            // 下厨房的菜谱没有营养表，选完会用本地库同名菜的热量预填，仍可手动改。
+            parts.append("下厨房菜谱，选完按本地库估热量")
         }
         return parts.joined(separator: " · ")
     }
@@ -49,32 +48,169 @@ enum FoodSearchError: LocalizedError {
     }
 }
 
-/// Open Food Facts 客户端。
+/// 联网食物搜索。
 ///
-/// 实测中文站响应偏慢（秒级到十秒级都有），所以超时给得比较宽松，
-/// 界面上必须先出「搜索中」，失败要能降级回本地库，不能把用户卡住。
+/// 主源是「下厨房」：国内直连、实测 0.5 秒左右返回、每条都带真实照片，
+/// 中文家常菜覆盖比 Open Food Facts 好得多。
+/// 它的短板是菜谱页不提供营养表，所以热量留空，
+/// 由记一笔页面拿本地库同名条目兜底，兜不到就让用户自己填。
+///
+/// 备源保留 Open Food Facts 中国站：包装食品有营养表，
+/// 但实测经常整站 503（多次复现），只当补充，不再作为唯一来源。
 actor FoodSearchService {
     static let shared = FoodSearchService()
 
     private let session: URLSession
-    private let baseURL = "https://cn.openfoodfacts.org"
+    private let xiachufang = "https://www.xiachufang.com/search/"
+    private let openFoodFacts = "https://cn.openfoodfacts.org/cgi/search.pl"
 
     init() {
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 14
-        configuration.timeoutIntervalForResource = 25
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 20
         configuration.waitsForConnectivity = false
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         session = URLSession(configuration: configuration)
     }
 
+    /// 两个源并行跑：下厨房快、Open Food Facts 慢还常挂，谁先回来都不该被另一个拖住。
+    /// 两边都失败才抛错；只要有一边出结果，就正常返回。
     func search(_ keyword: String, limit: Int = 25) async throws -> [RemoteFood] {
         let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else { return [] }
 
-        var components = URLComponents(string: baseURL + "/cgi/search.pl")
+        async let local = searchXiachufang(trimmed, limit: limit)
+        async let remote = searchOpenFoodFacts(trimmed, limit: limit)
+
+        let (localResult, remoteResult) = await (try? local, try? remote)
+
+        var merged: [RemoteFood] = []
+        var seen = Set<String>()
+        for food in (localResult ?? []) + (remoteResult ?? []) {
+            let key = food.name.lowercased()
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            merged.append(food)
+        }
+
+        if merged.isEmpty, localResult == nil, remoteResult == nil {
+            throw FoodSearchError.offline
+        }
+        return Array(merged.prefix(limit))
+    }
+
+    // MARK: - 下厨房
+
+    private func searchXiachufang(_ keyword: String, limit: Int) async throws -> [RemoteFood] {
+        var components = URLComponents(string: xiachufang)
+        components?.queryItems = [URLQueryItem(name: "keyword", value: keyword)]
+        guard let url = components?.url else { return [] }
+
+        var request = URLRequest(url: url)
+        // 移动端 UA 拿到的页面更轻、结构更稳。
+        request.setValue(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 16_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Mobile/15E148 Safari/604.1",
+            forHTTPHeaderField: "User-Agent"
+        )
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw FoodSearchError.offline
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw FoodSearchError.badResponse(http.statusCode)
+        }
+        let html = String(data: data, encoding: .utf8) ?? ""
+        return Self.decodeXiachufang(html, limit: limit)
+    }
+
+    /// 解析下厨房搜索结果页。
+    ///
+    /// 卡片长这样（实测结构，注意 `src` 是占位 base64，真图在 `data-src`）：
+    ///
+    ///     <div class="recipe recipe-215-horizontal ...">
+    ///       <a href="/recipe/107356708/">
+    ///         <div class="cover"><img src="data:image/png;base64,..."
+    ///              data-src="https://i2.chuimg.com/xxx.jpg?imageView2/1/w/215/h/136/..." /></div>
+    ///       </a>
+    ///       <div class="info"><p class="name"><a href="/recipe/107356708/">烤牛奶</a></p></div>
+    ///     </div>
+    ///
+    /// 所以一条正则从「菜谱 ID → 真图 → 名字」一次抓全，避免按出现顺序硬配对把图和名错位。
+    nonisolated static func decodeXiachufang(_ html: String, limit: Int) -> [RemoteFood] {
+        guard !html.isEmpty else { return [] }
+
+        let pattern = #"<div class="recipe[^"]*"[\s\S]*?href="/recipe/(\d+)/"[\s\S]*?data-src="([^"]+)"[\s\S]*?<p class="name">\s*<a[^>]*>([\s\S]*?)</a>"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return []
+        }
+
+        let ns = html as NSString
+        let matches = regex.matches(in: html, options: [], range: NSRange(location: 0, length: ns.length))
+
+        var result: [RemoteFood] = []
+        var seen = Set<String>()
+
+        for match in matches {
+            guard match.numberOfRanges >= 4 else { continue }
+            let recipeID = ns.substring(with: match.range(at: 1))
+            let rawImage = ns.substring(with: match.range(at: 2))
+            let rawName = ns.substring(with: match.range(at: 3))
+
+            let name = Self.clean(rawName)
+            guard !name.isEmpty, !recipeID.isEmpty else { continue }
+            guard !seen.contains(name.lowercased()) else { continue }
+            seen.insert(name.lowercased())
+
+            result.append(
+                RemoteFood(
+                    id: "xcf-\(recipeID)",
+                    name: name,
+                    brand: "下厨房",
+                    imageURL: Self.largerImage(rawImage),
+                    // 下厨房不给营养表，留空让上层兜底或让用户自己填。
+                    kcalPer100: 0,
+                    proteinPer100: 0,
+                    carbsPer100: 0,
+                    fatPer100: 0
+                )
+            )
+            if result.count >= limit { break }
+        }
+        return result
+    }
+
+    /// 去掉标签残留和多余空白。
+    private nonisolated static func clean(_ raw: String) -> String {
+        let stripped = raw.replacingOccurrences(
+            of: "<[^>]+>",
+            with: " ",
+            options: .regularExpression
+        )
+        return stripped
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+    }
+
+    /// 列表里 215×136 的缩略图糊得没法看，把七牛裁剪参数换大一点。
+    nonisolated static func largerImage(_ url: String) -> String {
+        guard url.contains("imageView2") else { return url }
+        var out = url
+        for size in ["/w/215/h/136", "/w/280/h/210", "/w/180/h/180"] {
+            out = out.replacingOccurrences(of: size, with: "/w/320/h/320")
+        }
+        return out
+    }
+
+    // MARK: - Open Food Facts（备源）
+
+    private func searchOpenFoodFacts(_ keyword: String, limit: Int) async throws -> [RemoteFood] {
+        var components = URLComponents(string: openFoodFacts)
         components?.queryItems = [
-            URLQueryItem(name: "search_terms", value: trimmed),
+            URLQueryItem(name: "search_terms", value: keyword),
             URLQueryItem(name: "search_simple", value: "1"),
             URLQueryItem(name: "action", value: "process"),
             URLQueryItem(name: "json", value: "1"),
@@ -84,24 +220,20 @@ actor FoodSearchService {
         guard let url = components?.url else { return [] }
 
         var request = URLRequest(url: url)
-        request.setValue("SummitScale/0.3 (iOS; personal calorie log)", forHTTPHeaderField: "User-Agent")
+        request.setValue("SummitScale/0.4 (iOS; personal calorie log)", forHTTPHeaderField: "User-Agent")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        do {
-            let (data, response) = try await session.data(for: request)
-            guard let http = response as? HTTPURLResponse else { return [] }
-            guard (200..<300).contains(http.statusCode) else {
-                throw FoodSearchError.badResponse(http.statusCode)
-            }
-            return Self.decode(data)
-        } catch let error as FoodSearchError {
-            throw error
-        } catch {
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
             throw FoodSearchError.offline
         }
+        guard (200..<300).contains(http.statusCode) else {
+            throw FoodSearchError.badResponse(http.statusCode)
+        }
+        return Self.decode(data)
     }
 
-    // MARK: - 解析
+    // MARK: - 解析（Open Food Facts）
 
     nonisolated static func decode(_ data: Data) -> [RemoteFood] {
         guard

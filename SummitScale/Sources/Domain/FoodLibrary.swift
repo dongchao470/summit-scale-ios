@@ -14,6 +14,10 @@ struct FoodItem: Identifiable, Hashable {
     /// 常见一份的说法。
     let commonLabel: String
 
+    /// 配图地址。本地库本身不带图，靠 FoodImages 里按 id 查到的图；
+    /// 查不到就返回 nil，列表会退回分类图标兜底，不会留空白。
+    var imageURL: String? { FoodImages.url(for: id) }
+
     /// 按克数换算这一份的热量。
     func kcal(grams: Double) -> Double { kcalPer100g * grams / 100 }
 
@@ -28,7 +32,7 @@ struct FoodItem: Identifiable, Hashable {
 ///
 /// 数据写成一个紧凑的多行字符串再解析，比几百行构造器短，也方便逐条校对。
 enum FoodLibrary {
-    /// 主表 + 三张补充表（日常菜、火锅、咖啡奶茶），合并成一份库。
+    /// 主表 + 四张补充表（日常菜、第二批日常、火锅、咖啡奶茶），合并成一份库。
     static let items: [FoodItem] = parse(allRaw)
 
     /// 分类按固定顺序排，免得每加一批数据就把目录顺序打乱。
@@ -48,11 +52,38 @@ enum FoodLibrary {
     }
 
     private static var allRaw: String {
-        [raw, extraDailyRaw, extraHotpotRaw, extraCafeRaw].joined(separator: "\n")
+        [raw, extraDailyRaw, extraDaily2Raw, extraHotpotRaw, extraCafeRaw].joined(separator: "\n")
     }
 
     static func items(in category: String) -> [FoodItem] {
         items.filter { $0.category == category }
+    }
+
+    /// 按名字找最接近的本地条目。
+    ///
+    /// 联网结果（尤其下厨房的菜谱）只给菜名和图，没有营养表，用同名或相近名的
+    /// 本地条目把数值补上，比让用户凭空估要靠谱。匹配不上返回 nil，上层退成「自己填热量」。
+    static func bestMatch(_ name: String) -> FoodItem? {
+        let key = normalized(name)
+        guard key.count >= 2 else { return nil }
+
+        if let exact = items.first(where: { normalized($0.name) == key }) {
+            return exact
+        }
+        // 包含关系里取名字最短的，免得「牛奶」匹配到「牛奶巧克力」。
+        return items
+            .filter { item in
+                let localName = normalized(item.name)
+                guard localName.count >= 2 else { return false }
+                return localName.contains(key) || key.contains(localName)
+            }
+            .sorted { $0.name.count < $1.name.count }
+            .first
+    }
+
+    /// 比对用的归一化：只留汉字、字母和数字，去掉空格、括号和标点。
+    static func normalized(_ text: String) -> String {
+        text.filter { $0.isLetter || $0.isNumber }
     }
 
     static func item(id: String) -> FoodItem? {

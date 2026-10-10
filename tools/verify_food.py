@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """校验食物库数据。
 
-解析 SummitScale/Sources/Domain 下四个 Swift 文件里的多行字符串，
+解析 SummitScale/Sources/Domain 下五个 Swift 文件里的多行字符串，
 逐行检查格式（9 段）、id 唯一性、数值可解析、以及热量与三大营养素是否自洽。
 纯标准库，CI 与本地都能跑。
 """
@@ -15,6 +15,7 @@ SRC = ROOT / "SummitScale" / "Sources" / "Domain"
 FILES = [
     "FoodLibrary.swift",
     "FoodExtraDaily.swift",
+    "FoodExtraDaily2.swift",
     "FoodExtraHotpot.swift",
     "FoodExtraCafe.swift",
 ]

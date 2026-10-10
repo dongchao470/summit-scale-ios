@@ -54,7 +54,7 @@ struct TemplateEditorView: View {
                         .padding(.vertical, 2)
                     }
                     .onDelete { offsets in
-                        items.remove(atOffsets: offsets)
+                        withAnimation { items.remove(atOffsets: offsets) }
                     }
 
                     Button {
@@ -63,10 +63,26 @@ struct TemplateEditorView: View {
                         Label("加一样", systemImage: "plus.circle.fill")
                             .frame(minHeight: Theme.minTouch, alignment: .leading)
                     }
+
+                    // 合计放成 Section 里普通一行：Form 的 footer 在删行后不保证重建，
+                    // 之前写在 footer 里就会「删了东西、热量不动」。
+                    if !items.isEmpty {
+                        HStack {
+                            Text("合计")
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(Fmt.kcal(totalKcal)) 千卡")
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(Theme.accent)
+                                .monospacedDigit()
+                        }
+                        .animation(.default, value: totalKcal)
+                        .accessibilityElement(children: .combine)
+                    }
                 } header: {
                     Text("内容")
                 } footer: {
-                    Text(items.isEmpty ? "还没加内容，套餐存不了。" : "合计约 \(Fmt.kcal(totalKcal)) 千卡。左滑可删。")
+                    Text(items.isEmpty ? "还没加内容，套餐存不了。" : "左滑可以删掉单样。")
                 }
 
                 Section {

@@ -31,6 +31,7 @@ struct TodayView: View {
     @State private var showActivitySheet = false
     @State private var showProfileSheet = false
     @State private var presetMeal: MealType?
+    @State private var pendingTemplate: MealTemplate?
     @State private var filledMessage: String?
 
     // MARK: - 派生数据
@@ -75,6 +76,20 @@ struct TodayView: View {
 
     // MARK: - 页面
 
+    /// 顶部问候语：按时间切，后面接用户的显示名。
+    private var greetingTitle: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        let prefix: String
+        switch hour {
+        case 5..<11: prefix = "早上好"
+        case 11..<13: prefix = "中午好"
+        case 13..<18: prefix = "下午好"
+        case 18..<23: prefix = "晚上好"
+        default: prefix = "夜深了"
+        }
+        return "\(prefix)，\(profile?.displayName ?? "你")"
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -94,7 +109,7 @@ struct TodayView: View {
                 .padding(.bottom, 110)
             }
             .background(Theme.pageBackground)
-            .navigationTitle("今日")
+            .navigationTitle(greetingTitle)
             .sheet(isPresented: $showFoodSheet) {
                 AddFoodSheet(defaultMeal: presetMeal ?? AddFoodSheet.suggestedMeal())
                     .onDisappear { presetMeal = nil }
@@ -104,6 +119,23 @@ struct TodayView: View {
             }
             .sheet(isPresented: $showProfileSheet) {
                 ProfileEditorView()
+            }
+            .confirmationDialog(
+                pendingTemplate.map { "把「\($0.name)」记到今天？" } ?? "",
+                isPresented: Binding(
+                    get: { pendingTemplate != nil },
+                    set: { if !$0 { pendingTemplate = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: pendingTemplate
+            ) { template in
+                Button("记上，约 \(Fmt.kcal(template.totalKcal)) 千卡") {
+                    applyTemplate(template)
+                    pendingTemplate = nil
+                }
+                Button("取消", role: .cancel) { pendingTemplate = nil }
+            } message: { template in
+                Text(template.items.map(\.name).joined(separator: " + "))
             }
             .alert("已加入今日", isPresented: Binding(
                 get: { filledMessage != nil },
@@ -281,8 +313,9 @@ struct TodayView: View {
                 Spacer()
 
                 if let template = templates.first(where: { $0.meal == meal }) {
+                    // 套餐点一下就是整份入账，误触代价太大，所以先弹一次确认。
                     Button {
-                        applyTemplate(template)
+                        pendingTemplate = template
                     } label: {
                         Label(template.name, systemImage: "wand.and.stars")
                             .font(.caption.weight(.semibold))
@@ -290,7 +323,7 @@ struct TodayView: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(Theme.accent)
-                    .accessibilityLabel("一键加入套餐 \(template.name)")
+                    .accessibilityLabel("套用套餐 \(template.name)，需要确认")
                 }
 
                 Button {
@@ -299,7 +332,8 @@ struct TodayView: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.body)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(Theme.accent)

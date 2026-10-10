@@ -21,7 +21,7 @@ struct PickedFood: Identifiable, Hashable {
         name = item.name
         brand = nil
         category = item.category
-        imageURL = nil
+        imageURL = item.imageURL
         kcalPer100 = item.kcalPer100g
         proteinPer100 = item.proteinPer100g
         carbsPer100 = item.carbsPer100g
@@ -32,17 +32,21 @@ struct PickedFood: Identifiable, Hashable {
     }
 
     init(remote: RemoteFood) {
+        // 下厨房只给菜名和图，不给营养表；先在本地库找同名菜把数值补上，
+        // 补不到就留 0，记一笔页面会提示用户自己填。
+        let local = remote.kcalPer100 > 0 ? nil : FoodLibrary.bestMatch(remote.name)
+
         id = remote.id
         name = remote.name
         brand = remote.brand
-        category = "联网"
+        category = local?.category ?? "联网"
         imageURL = remote.imageURL
-        kcalPer100 = remote.kcalPer100
-        proteinPer100 = remote.proteinPer100
-        carbsPer100 = remote.carbsPer100
-        fatPer100 = remote.fatPer100
-        commonGrams = 100
-        commonLabel = "100 g"
+        kcalPer100 = remote.kcalPer100 > 0 ? remote.kcalPer100 : (local?.kcalPer100g ?? 0)
+        proteinPer100 = remote.proteinPer100 > 0 ? remote.proteinPer100 : (local?.proteinPer100g ?? 0)
+        carbsPer100 = remote.carbsPer100 > 0 ? remote.carbsPer100 : (local?.carbsPer100g ?? 0)
+        fatPer100 = remote.fatPer100 > 0 ? remote.fatPer100 : (local?.fatPer100g ?? 0)
+        commonGrams = local?.commonGrams ?? 100
+        commonLabel = local?.commonLabel ?? "100 g"
         isRemote = true
     }
 
@@ -138,8 +142,20 @@ struct FoodPickerSheet: View {
                 placement: .navigationBarDrawer(displayMode: .always),
                 prompt: "搜食物，比如番茄炒蛋、可乐"
             )
-            .onSubmit(of: .search) {
-                Task { await searchRemote() }
+            // 输入停下就自动联网，不用再手动点按钮或按回车 —— 之前入口藏在列表里，
+            // 用户根本没发现，才一直以为「联网搜索没成功过」。
+            .task(id: query) {
+                let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard keyword.count >= 2 else {
+                    remoteResults = []
+                    remoteKeyword = ""
+                    remoteError = nil
+                    return
+                }
+                // 停手 0.7 秒再发，别每敲一个字打一次接口。
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                guard !Task.isCancelled else { return }
+                await searchRemote(keyword)
             }
             .navigationTitle("选食物")
             .navigationBarTitleDisplayMode(.inline)
@@ -224,13 +240,13 @@ struct FoodPickerSheet: View {
     private var remoteSection: some View {
         Section {
             if remoteKeyword.isEmpty {
-                Button {
-                    Task { await searchRemote() }
-                } label: {
-                    Label("联网搜包装食品（带图片和条码）", systemImage: "antenna.radiowaves.left.and.right")
-                        .font(.subheadline)
+                HStack(spacing: 8) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .foregroundColor(Theme.accent)
+                    Text("输入两个字以上会自动联网找，数据来自下厨房（带图）。")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
                 }
-                .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             } else if isSearchingRemote {
                 HStack(spacing: 10) {
                     ProgressView()
@@ -244,7 +260,7 @@ struct FoodPickerSheet: View {
                         .font(.footnote)
                         .foregroundColor(Theme.warning)
                     Button("再试一次") {
-                        Task { await searchRemote() }
+                        Task { await searchRemote(query.trimmingCharacters(in: .whitespacesAndNewlines)) }
                     }
                     .font(.footnote.weight(.semibold))
                 }
@@ -260,8 +276,8 @@ struct FoodPickerSheet: View {
                     } label: {
                         foodRow(
                             name: food.name,
-                            subtitle: food.subtitle,
-                            kcalPer100: food.kcalPer100,
+                            subtitle: remoteSubtitle(food),
+                            kcalPer100: PickedFood(remote: food).kcalPer100,
                             imageURL: food.imageURL
                         )
                     }
@@ -271,11 +287,27 @@ struct FoodPickerSheet: View {
         } header: {
             Text("联网结果")
         } footer: {
-            Text("数据来自 Open Food Facts。中文库以包装食品为主，家常菜请用上面的本地库。")
+            Text("数据来自下厨房（真实菜谱图 + 菜名），家常菜中文覆盖好；它的菜谱页不给营养表，所以热量会先按本地库同名条目估，选完还能改。包装食品会再查一次 Open Food Facts。")
         }
     }
 
     // MARK: - 行
+
+    /// 联网行的副标题。下厨房不给营养表，这里先用本地库同名菜估一个，
+    /// 让用户在列表里直接看到大概热量，不用点进去才发现是空的。
+    private func remoteSubtitle(_ food: RemoteFood) -> String {
+        var parts: [String] = []
+        if let brand = food.brand, !brand.isEmpty {
+            parts.append(brand)
+        }
+        let kcal = PickedFood(remote: food).kcalPer100
+        if kcal > 0 {
+            parts.append("每 100 克 \(Int(kcal.rounded())) 千卡 · 估算")
+        } else {
+            parts.append("没有营养数据，选了自己填")
+        }
+        return parts.joined(separator: " · ")
+    }
 
     private func foodRow(
         name: String,
@@ -312,8 +344,7 @@ struct FoodPickerSheet: View {
         .contentShape(Rectangle())
     }
 
-    private func searchRemote() async {
-        let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func searchRemote(_ keyword: String) async {
         guard !keyword.isEmpty else { return }
         remoteKeyword = keyword
         isSearchingRemote = true

@@ -13,7 +13,17 @@ struct AddFoodSheet: View {
     @State private var isManual = false
     @State private var manualName = ""
     @State private var manualKcalText = ""
+    @State private var manualGramsText = ""
     @State private var showPicker = false
+    @FocusState private var focusedField: Field?
+
+    /// 需要自己收键盘的输入框。
+    private enum Field: Hashable {
+        case grams
+        case manualName
+        case manualKcal
+        case manualGrams
+    }
 
     /// 按当前时间猜默认餐次，省得每次都手动切。
     static func suggestedMeal(for date: Date = Date()) -> MealType {
@@ -33,6 +43,11 @@ struct AddFoodSheet: View {
 
     private var manualKcal: Double {
         Double(manualKcalText.trimmingCharacters(in: .whitespaces)) ?? 0
+    }
+
+    /// 手填条目的份量，留空就是 0（只记热量，不折算克数）。
+    private var manualGrams: Double {
+        Double(manualGramsText.trimmingCharacters(in: .whitespaces)) ?? 0
     }
 
     private var canSave: Bool {
@@ -76,6 +91,10 @@ struct AddFoodSheet: View {
                     Button("记上") { save() }
                         .disabled(!canSave)
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完成") { focusedField = nil }
+                }
             }
             .sheet(isPresented: $showPicker) {
                 FoodPickerSheet { food in
@@ -117,6 +136,7 @@ struct AddFoodSheet: View {
                     Spacer()
                     TextField("克", text: $gramsText)
                         .keyboardType(.decimalPad)
+                        .focused($focusedField, equals: .grams)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 72)
                         .onChange(of: gramsText) { text in
@@ -177,16 +197,28 @@ struct AddFoodSheet: View {
     private var manualSection: some View {
         Section("手动填") {
             TextField("吃了什么", text: $manualName)
+                .focused($focusedField, equals: .manualName)
             HStack {
                 Text("热量")
                 Spacer()
                 TextField("千卡", text: $manualKcalText)
                     .keyboardType(.numberPad)
                     .multilineTextAlignment(.trailing)
+                    .focused($focusedField, equals: .manualKcal)
                     .frame(width: 88)
                 Text("千卡").foregroundColor(.secondary)
             }
-            Text("手填的条目只有热量，不参与三大营养素统计。")
+            HStack {
+                Text("份量")
+                Spacer()
+                TextField("克", text: $manualGramsText)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .focused($focusedField, equals: .manualGrams)
+                    .frame(width: 88)
+                Text("克").foregroundColor(.secondary)
+            }
+            Text("手填的条目只有热量，不参与三大营养素统计；份量可以留空。")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -200,7 +232,7 @@ struct AddFoodSheet: View {
             store.addFood(
                 name: manualName.trimmingCharacters(in: .whitespacesAndNewlines),
                 meal: meal,
-                grams: 0,
+                grams: manualGrams,
                 kcal: manualKcal,
                 protein: 0,
                 carbs: 0,
