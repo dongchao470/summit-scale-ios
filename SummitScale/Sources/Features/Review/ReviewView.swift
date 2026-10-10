@@ -2,102 +2,96 @@ import Charts
 import CoreData
 import SwiftUI
 
-struct WeekBucket: Identifiable {
-    let weekStart: Date
-    let kilometers: Double
-    let count: Int
-
-    var id: Date { weekStart }
-}
-
+/// 回顾。看趋势，不看单点。
 struct ReviewView: View {
-    enum Scope: String, CaseIterable, Identifiable {
-        case days30 = "30 天"
-        case days90 = "90 天"
-        case all = "全部"
+    enum Span: String, CaseIterable, Identifiable {
+        case week
+        case month
+        case quarter
 
         var id: String { rawValue }
 
-        var dayCount: Int? {
+        var title: String {
             switch self {
-            case .days30: return 30
-            case .days90: return 90
-            case .all: return nil
+            case .week: return "7 天"
+            case .month: return "30 天"
+            case .quarter: return "90 天"
             }
         }
+
+        var days: Int {
+            switch self {
+            case .week: return 7
+            case .month: return 30
+            case .quarter: return 90
+            }
+        }
+    }
+
+    struct DailyIntake: Identifiable {
+        let day: Date
+        let kcal: Double
+
+        var id: Date { day }
     }
 
     @FetchRequest(sortDescriptors: WeightEntry.dateAscending, animation: .default)
     private var weights: FetchedResults<WeightEntry>
 
-    @FetchRequest(sortDescriptors: Hike.dateAscending, animation: .default)
-    private var hikes: FetchedResults<Hike>
+    @FetchRequest(sortDescriptors: FoodEntry.dateDescending, animation: .default)
+    private var foods: FetchedResults<FoodEntry>
 
-    @State private var scope: Scope = .days90
+    @FetchRequest(sortDescriptors: ActivityEntry.dateDescending, animation: .default)
+    private var activities: FetchedResults<ActivityEntry>
+
+    @State private var span: Span = .month
+
+    private var cutoff: Date { Fmt.daysAgo(span.days) }
 
     private var weightPoints: [WeightEntry] {
-        guard let days = scope.dayCount else { return Array(weights) }
-        let cutoff = Fmt.daysAgo(days)
-        return weights.filter { $0.date >= cutoff }
+        weights.filter { $0.date >= cutoff }
     }
 
-    private var hikePoints: [Hike] {
-        guard let days = scope.dayCount else { return Array(hikes) }
-        let cutoff = Fmt.daysAgo(days)
-        return hikes.filter { $0.date >= cutoff }
+    private var dailyIntake: [DailyIntake] {
+        let recent = foods.filter { $0.date >= cutoff }
+        let grouped = Dictionary(grouping: recent) { Fmt.startOfDay($0.date) }
+        return grouped
+            .map { DailyIntake(day: $0.key, kcal: $0.value.reduce(0) { $0 + $1.kcal }) }
+            .sorted { $0.day < $1.day }
     }
 
-    private var weeklyHikes: [WeekBucket] {
-        var buckets: [Date: (Double, Int)] = [:]
-        for hike in hikePoints {
-            let key = Fmt.startOfWeek(hike.date)
-            let current = buckets[key] ?? (0, 0)
-            buckets[key] = (current.0 + hike.distanceKilometers, current.1 + 1)
+    private var weightChange: Double? {
+        guard weightPoints.count >= 2, let first = weightPoints.first, let last = weightPoints.last else {
+            return nil
         }
-        return buckets
-            .map { WeekBucket(weekStart: $0.key, kilometers: $0.value.0, count: $0.value.1) }
-            .sorted { $0.weekStart < $1.weekStart }
+        return last.kilograms - first.kilograms
     }
 
-    private var weightSummary: (average: Double, min: Double, max: Double, change: Double)? {
-        let values = weightPoints.map { $0.kilograms }
-        guard let min = values.min(),
-              let max = values.max(),
-              let first = values.first,
-              let last = values.last else { return nil }
-        let average = values.reduce(0, +) / Double(values.count)
-        return (average, min, max, last - first)
+    private var totalBurn: Double {
+        activities.filter { $0.date >= cutoff }.reduce(0) { $0 + $1.kcal }
     }
 
-    private var hikeTotals: (count: Int, kilometers: Double, climb: Double, minutes: Double) {
-        let kilometers = hikePoints.reduce(0) { $0 + $1.distanceKilometers }
-        let climb = hikePoints.reduce(0) { $0 + $1.elevationGainMeters }
-        let minutes = hikePoints.reduce(0) { $0 + $1.durationMinutes }
-        return (hikePoints.count, kilometers, climb, minutes)
-    }
-
-    private var weightDomain: ClosedRange<Double> {
-        let values = weightPoints.map { $0.kilograms }
-        guard let min = values.min(), let max = values.max() else { return 0...1 }
-        let padding = Swift.max((max - min) * 0.15, 0.5)
-        return (min - padding)...(max + padding)
+    private var averageIntake: Double? {
+        guard !dailyIntake.isEmpty else { return nil }
+        let total = dailyIntake.reduce(0) { $0 + $1.kcal }
+        return total / Double(dailyIntake.count)
     }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    Picker("范围", selection: $scope) {
-                        ForEach(Scope.allCases) { item in
-                            Text(item.rawValue).tag(item)
+                    Picker("区间", selection: $span) {
+                        ForEach(Span.allCases) { option in
+                            Text(option.title).tag(option)
                         }
                     }
                     .pickerStyle(.segmented)
                 }
 
-                weightChartSection
-                hikeChartSection
-                statsSection
+                weightSection
+                intakeSection
+                summarySection
             }
             .listStyle(.insetGrouped)
             .navigationTitle("回顾")
@@ -105,77 +99,82 @@ struct ReviewView: View {
     }
 
     @ViewBuilder
-    private var weightChartSection: some View {
-        Section("体重曲线") {
+    private var weightSection: some View {
+        Section("体重") {
             if weightPoints.count >= 2 {
-                Chart {
-                    ForEach(weightPoints, id: \.objectID) { entry in
-                        LineMark(
-                            x: .value("日期", entry.date),
-                            y: .value("体重", entry.kilograms)
-                        )
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color.accentColor)
-
-                        PointMark(
-                            x: .value("日期", entry.date),
-                            y: .value("体重", entry.kilograms)
-                        )
-                        .foregroundStyle(Color.accentColor)
-                        .symbolSize(20)
-                    }
-                }
-                .chartYScale(domain: weightDomain)
-                .frame(height: 200)
-                .accessibilityLabel("体重变化曲线，共 \(weightPoints.count) 个样本")
-            } else {
-                Text("至少要有两次体重记录才能画出曲线")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var hikeChartSection: some View {
-        Section("每周爬山") {
-            if weeklyHikes.isEmpty {
-                Text("这个区间没有爬山记录")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-            } else {
-                Chart(weeklyHikes) { bucket in
-                    BarMark(
-                        x: .value("周", bucket.weekStart, unit: .weekOfYear),
-                        y: .value("距离", bucket.kilometers)
+                Chart(weightPoints, id: \.objectID) { entry in
+                    AreaMark(
+                        x: .value("日期", entry.date),
+                        y: .value("体重", entry.kilograms)
                     )
-                    .foregroundStyle(Color.accentColor.gradient)
-                    .cornerRadius(4)
+                    .foregroundStyle(Color.accentColor.opacity(0.12))
+
+                    LineMark(
+                        x: .value("日期", entry.date),
+                        y: .value("体重", entry.kilograms)
+                    )
+                    .foregroundStyle(Color.accentColor)
+                    .interpolationMethod(.catmullRom)
                 }
+                .chartYScale(domain: .automatic(includesZero: false))
                 .frame(height: 180)
-                .accessibilityLabel("每周爬山距离柱状图，共 \(weeklyHikes.count) 周")
+                .accessibilityLabel("体重趋势图，共 \(weightPoints.count) 个点")
+            } else {
+                Text("记录还不够画趋势，多记几天。")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
             }
         }
     }
 
     @ViewBuilder
-    private var statsSection: some View {
-        Section("统计") {
-            if let summary = weightSummary {
-                StatRow(title: "体重记录", value: "\(weightPoints.count) 条")
-                StatRow(title: "平均体重", value: "\(Fmt.kg(summary.average)) kg")
-                StatRow(title: "最轻 / 最重", value: "\(Fmt.kg(summary.min)) / \(Fmt.kg(summary.max)) kg")
-                StatRow(title: "区间变化", value: "\(Fmt.signedKg(summary.change)) kg")
+    private var intakeSection: some View {
+        Section("每天吃进去的") {
+            if dailyIntake.count >= 2 {
+                Chart(dailyIntake) { point in
+                    BarMark(
+                        x: .value("日期", point.day, unit: .day),
+                        y: .value("千卡", point.kcal)
+                    )
+                    .foregroundStyle(Color.orange.opacity(0.75))
+                }
+                .frame(height: 160)
+                .accessibilityLabel("每日摄入热量柱状图，共 \(dailyIntake.count) 天")
             } else {
-                Text("暂无体重数据")
+                Text("还没有足够的饮食记录。")
                     .font(.footnote)
                     .foregroundColor(.secondary)
             }
-
-            StatRow(title: "爬山次数", value: "\(hikeTotals.count) 次")
-            StatRow(title: "总距离", value: "\(Fmt.km(hikeTotals.kilometers)) km")
-            StatRow(title: "总爬升", value: "\(Fmt.meters(hikeTotals.climb)) m")
-            StatRow(title: "总用时", value: Fmt.minutes(hikeTotals.minutes))
         }
+    }
+
+    @ViewBuilder
+    private var summarySection: some View {
+        Section("区间汇总") {
+            if let change = weightChange {
+                summaryRow("体重变化", value: Fmt.signedKg(change), unit: "kg")
+            }
+            if let average = averageIntake {
+                summaryRow("平均每天摄入", value: Fmt.kcal(average), unit: "kcal")
+            }
+            summaryRow("运动消耗合计", value: Fmt.kcal(totalBurn), unit: "kcal")
+            summaryRow("记了几天", value: "\(dailyIntake.count)", unit: "天")
+        } footer: {
+            Text("热量是估算值，按公式推的，不是医疗建议。")
+        }
+    }
+
+    private func summaryRow(_ title: String, value: String, unit: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Text(value)
+                .font(.body.weight(.medium))
+                .monospacedDigit()
+            Text(unit)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }

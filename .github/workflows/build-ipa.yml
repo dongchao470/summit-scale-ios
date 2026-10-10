@@ -58,6 +58,15 @@ jobs:
             CODE_SIGN_ENTITLEMENTS="" \
             clean build | tail -n 120
 
+      - name: Inject entitlements (optional)
+        continue-on-error: true
+        run: |
+          set -x
+          APP="$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n 1)"
+          brew install ldid || true
+          ldid -S SummitScale/SummitScale.entitlements "$APP/SummitScale" || true
+          ldid -e "$APP/SummitScale" || true
+
       - name: Package IPA
         run: |
           set -euo pipefail
@@ -77,16 +86,16 @@ jobs:
           lipo -info "$APP/SummitScale" || true
           echo "--- size ---"
           du -sh "$APP"
-          zip -qry SummitScale-0.1.0-unsigned.ipa Payload
-          ls -lh SummitScale-0.1.0-unsigned.ipa
-          shasum -a 256 SummitScale-0.1.0-unsigned.ipa | tee SummitScale-0.1.0-unsigned.sha256
+          zip -qry SummitScale-0.2.0-unsigned.ipa Payload
+          ls -lh SummitScale-0.2.0-unsigned.ipa
+          shasum -a 256 SummitScale-0.2.0-unsigned.ipa | tee SummitScale-0.2.0-unsigned.sha256
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: SummitScale-ipa
           path: |
-            SummitScale-0.1.0-unsigned.ipa
-            SummitScale-0.1.0-unsigned.sha256
+            SummitScale-0.2.0-unsigned.ipa
+            SummitScale-0.2.0-unsigned.sha256
           if-no-files-found: error
           retention-days: 30
