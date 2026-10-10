@@ -12,7 +12,8 @@ final class Persistence {
 
     init(inMemory: Bool = false) {
         let model = Persistence.makeModel()
-        container = NSPersistentContainer(name: "SummitScale", managedObjectModel: model)
+        let container = NSPersistentContainer(name: "SummitScale", managedObjectModel: model)
+        self.container = container
 
         if inMemory, let description = container.persistentStoreDescriptions.first {
             description.url = URL(fileURLWithPath: "/dev/null")
