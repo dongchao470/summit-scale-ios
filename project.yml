@@ -28,8 +28,8 @@ targets:
       base:
         PRODUCT_NAME: SummitScale
         PRODUCT_BUNDLE_IDENTIFIER: com.dongchao470.summit-scale
-        MARKETING_VERSION: "0.2.0"
-        CURRENT_PROJECT_VERSION: "2"
+        MARKETING_VERSION: "0.3.0"
+        CURRENT_PROJECT_VERSION: "3"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: "NO"
@@ -41,8 +41,8 @@ targets:
       properties:
         CFBundleDisplayName: 山与秤
         CFBundleName: SummitScale
-        CFBundleShortVersionString: "0.2.0"
-        CFBundleVersion: "2"
+        CFBundleShortVersionString: "0.3.0"
+        CFBundleVersion: "3"
         LSRequiresIPhoneOS: true
         UIUserInterfaceStyle: Automatic
         ITSAppUsesNonExemptEncryption: false

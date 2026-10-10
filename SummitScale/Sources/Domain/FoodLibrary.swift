@@ -28,14 +28,27 @@ struct FoodItem: Identifiable, Hashable {
 ///
 /// 数据写成一个紧凑的多行字符串再解析，比几百行构造器短，也方便逐条校对。
 enum FoodLibrary {
-    static let items: [FoodItem] = parse(raw)
+    /// 主表 + 三张补充表（日常菜、火锅、咖啡奶茶），合并成一份库。
+    static let items: [FoodItem] = parse(allRaw)
+
+    /// 分类按固定顺序排，免得每加一批数据就把目录顺序打乱。
+    static let categoryOrder: [String] = [
+        "主食", "家常菜", "肉蛋", "蛋奶", "豆类", "蔬菜", "水果", "坚果",
+        "汤粥", "火锅", "快餐", "零食", "咖啡奶茶", "饮品", "调味",
+    ]
 
     static var categories: [String] {
-        var seen: [String] = []
-        for item in items where !seen.contains(item.category) {
-            seen.append(item.category)
+        let present = Set(items.map { $0.category })
+        var ordered = categoryOrder.filter { present.contains($0) }
+        // 没登记过的新分类也不能丢。
+        for item in items where !ordered.contains(item.category) {
+            ordered.append(item.category)
         }
-        return seen
+        return ordered
+    }
+
+    private static var allRaw: String {
+        [raw, extraDailyRaw, extraHotpotRaw, extraCafeRaw].joined(separator: "\n")
     }
 
     static func items(in category: String) -> [FoodItem] {

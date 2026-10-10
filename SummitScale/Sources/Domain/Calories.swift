@@ -226,6 +226,27 @@ enum CalorieMath {
         }
     }
 
+    /// 三大营养素目标。
+    ///
+    /// 先按体重定蛋白（减脂期要保住肌肉，给得高一点），再按比例划脂肪，
+    /// 剩下的热量全给碳水 —— 比死抠固定百分比更符合实际吃喝。
+    /// 蛋白额外加一道上限：不超过总热量的 35%，避免极端体重下算出离谱数字。
+    static func macroTargets(intakeKcal: Double, kilograms: Double, goal: GoalType) -> MacroTargets {
+        guard intakeKcal > 0, kilograms > 0 else {
+            return MacroTargets(protein: 0, carbs: 0, fat: 0)
+        }
+        let proteinPerKilogram: Double
+        switch goal {
+        case .lose: proteinPerKilogram = 1.8
+        case .maintain: proteinPerKilogram = 1.5
+        case .gain: proteinPerKilogram = 1.6
+        }
+        let protein = min(kilograms * proteinPerKilogram, intakeKcal * 0.35 / 4)
+        let fat = intakeKcal * 0.27 / 9
+        let carbs = max(0, (intakeKcal - protein * 4 - fat * 9) / 4)
+        return MacroTargets(protein: protein, carbs: carbs, fat: fat)
+    }
+
     /// 运动消耗：MET × 3.5 × 体重(kg) / 200 × 分钟数。
     static func burn(kind: ActivityKind, minutes: Double, kilograms: Double) -> Double {
         guard minutes > 0, kilograms > 0 else { return 0 }
@@ -247,12 +268,34 @@ enum CalorieMath {
 
 // MARK: - 预算与流水
 
+/// 一天三大营养素的目标量，单位克。
+struct MacroTargets: Equatable {
+    let protein: Double
+    let carbs: Double
+    let fat: Double
+}
+
+/// 三大营养素的累计摄入。
+struct MacroIntake: Equatable {
+    var protein: Double = 0
+    var carbs: Double = 0
+    var fat: Double = 0
+
+    /// 相对目标的完成度，已夹在 0～1。
+    func progress(_ value: Double, target: Double) -> Double {
+        guard target > 0 else { return 0 }
+        return min(1, max(0, value / target))
+    }
+}
+
 /// 一天的热量预算快照。
 struct CalorieBudget: Equatable {
     let bmr: Double
     let tdee: Double
     let intakeTarget: Double
     let goal: GoalType
+    /// 三大营养素目标。
+    let macros: MacroTargets
 
     /// 相对总消耗的日均热量差，正数表示缺口。
     var dailyDeficit: Double { tdee - intakeTarget }
@@ -287,7 +330,14 @@ struct CalorieBudget: Equatable {
         )
         let tdee = CalorieMath.tdee(bmr: bmr, level: level)
         let target = overrideKcal ?? CalorieMath.intakeTarget(tdee: tdee, goal: goal, sex: sex)
-        return CalorieBudget(bmr: bmr, tdee: tdee, intakeTarget: target, goal: goal)
+        let macros = CalorieMath.macroTargets(intakeKcal: target, kilograms: kilograms, goal: goal)
+        return CalorieBudget(
+            bmr: bmr,
+            tdee: tdee,
+            intakeTarget: target,
+            goal: goal,
+            macros: macros
+        )
     }
 }
 

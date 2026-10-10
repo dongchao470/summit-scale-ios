@@ -127,6 +127,8 @@ final class FoodEntry: NSManagedObject {
     @NSManaged var carbs: Double
     @NSManaged var fat: Double
     @NSManaged var foodID: String?
+    /// 联网食物带回来的图片地址；本地库记录的为空。
+    @NSManaged var imageURL: String?
     @NSManaged var note: String?
     @NSManaged var createdAt: Date
     @NSManaged var source: String

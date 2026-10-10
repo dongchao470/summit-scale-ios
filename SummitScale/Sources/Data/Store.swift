@@ -148,7 +148,8 @@ extension Persistence {
         fat: Double,
         foodID: String?,
         note: String?,
-        date: Date
+        date: Date,
+        imageURL: String? = nil
     ) -> FoodEntry {
         let entry = FoodEntry(context: container.viewContext)
         entry.id = UUID()
@@ -161,6 +162,7 @@ extension Persistence {
         entry.carbs = carbs
         entry.fat = fat
         entry.foodID = foodID
+        entry.imageURL = imageURL
         entry.note = (note?.isEmpty ?? true) ? nil : note
         entry.createdAt = Date()
         entry.source = "manual"

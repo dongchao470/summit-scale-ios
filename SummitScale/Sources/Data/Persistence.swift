@@ -55,8 +55,28 @@ extension Persistence {
             profileEntity(),
             foodEntity(),
             activityEntity(),
+            mealTemplateEntity(),
         ]
         return model
+    }
+
+    private static func mealTemplateEntity() -> NSEntityDescription {
+        let entity = NSEntityDescription()
+        entity.name = "MealTemplate"
+        entity.managedObjectClassName = "MealTemplate"
+        entity.properties = [
+            attribute("id", .UUIDAttributeType),
+            attribute("name", .stringAttributeType, default: ""),
+            attribute("mealType", .stringAttributeType, default: "breakfast"),
+            attribute("itemsJSON", .stringAttributeType, default: "[]"),
+            attribute("autoFillEnabled", .booleanAttributeType, default: false),
+            attribute("autoFillHour", .integer16AttributeType, default: Int16(8)),
+            attribute("autoFillMinute", .integer16AttributeType, default: Int16(0)),
+            attribute("sortIndex", .integer16AttributeType, default: Int16(0)),
+            attribute("createdAt", .dateAttributeType),
+            attribute("updatedAt", .dateAttributeType),
+        ]
+        return entity
     }
 
     private static func weightEntity() -> NSEntityDescription {
@@ -130,6 +150,7 @@ extension Persistence {
             attribute("carbs", .doubleAttributeType, default: 0.0),
             attribute("fat", .doubleAttributeType, default: 0.0),
             attribute("foodID", .stringAttributeType, optional: true),
+            attribute("imageURL", .stringAttributeType, optional: true),
             attribute("note", .stringAttributeType, optional: true),
             attribute("createdAt", .dateAttributeType),
             attribute("source", .stringAttributeType, default: "manual"),
