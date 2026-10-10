@@ -35,83 +35,10 @@ struct ActivityEditorView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("运动") {
-                    Picker("类型", selection: $kind) {
-                        ForEach(ActivityKind.allCases) { option in
-                            Label(option.title, systemImage: option.symbol).tag(option)
-                        }
-                    }
-                    TextField(kind.title, text: $title)
-                        .accessibilityLabel("运动名称，可留空")
-                    DatePicker("时间", selection: $date, displayedComponents: [.date, .hourAndMinute])
-                }
-
-                Section {
-                    HStack {
-                        Text("时长")
-                        Spacer()
-                        TextField("60", text: $minutesText)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 88)
-                            .accessibilityLabel("时长，单位分钟")
-                        Text("分钟")
-                            .foregroundColor(.secondary)
-                    }
-
-                    if kind.supportsDistance {
-                        HStack {
-                            Text("距离")
-                            Spacer()
-                            TextField("0", text: $distanceText)
-                                .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(maxWidth: 88)
-                                .accessibilityLabel("距离，单位公里")
-                            Text("km")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    if kind == .hiking {
-                        HStack {
-                            Text("爬升")
-                            Spacer()
-                            TextField("0", text: $elevationText)
-                                .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(maxWidth: 88)
-                                .accessibilityLabel("累计爬升，单位米")
-                            Text("m")
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                } header: {
-                    Text("数据")
-                }
-
-                Section {
-                    HStack {
-                        Text("消耗")
-                        Spacer()
-                        TextField(Fmt.kcal(estimatedKcal), text: $manualKcalText)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 88)
-                            .accessibilityLabel("消耗热量，留空按公式估算")
-                        Text("kcal")
-                            .foregroundColor(.secondary)
-                    }
-                } header: {
-                    Text("热量")
-                } footer: {
-                    Text("留空按 \(kind.title) 的代谢当量估算约 \(Fmt.kcal(estimatedKcal)) 千卡（按 \(Fmt.kg(bodyKilograms)) kg 体重）。")
-                }
-
-                Section("备注") {
-                    TextField("可选", text: $note, axis: .vertical)
-                        .lineLimit(1...3)
-                }
+                kindSection
+                dataSection
+                kcalSection
+                noteSection
             }
             .navigationTitle("记运动")
             .navigationBarTitleDisplayMode(.inline)
@@ -124,6 +51,89 @@ struct ActivityEditorView: View {
                         .disabled(!canSave)
                 }
             }
+        }
+    }
+
+    // MARK: - 分段
+
+    private var kindSection: some View {
+        Section("运动") {
+            Picker("类型", selection: $kind) {
+                ForEach(ActivityKind.allCases) { option in
+                    Label(option.title, systemImage: option.symbol)
+                        .tag(option)
+                }
+            }
+            TextField(kind.title, text: $title)
+                .accessibilityLabel("运动名称，可留空")
+            DatePicker("时间", selection: $date, displayedComponents: [.date, .hourAndMinute])
+        }
+    }
+
+    private var dataSection: some View {
+        Section("数据") {
+            durationRow
+            if kind.supportsDistance {
+                distanceRow
+            }
+            if kind == .hiking {
+                elevationRow
+            }
+        }
+    }
+
+    private var kcalSection: some View {
+        Section {
+            kcalRow
+        } header: {
+            Text("热量")
+        } footer: {
+            Text("留空按 \(kind.title) 的代谢当量估算约 \(Fmt.kcal(estimatedKcal)) 千卡（按 \(Fmt.kg(bodyKilograms)) kg 体重）。")
+        }
+    }
+
+    private var noteSection: some View {
+        Section("备注") {
+            TextField("可选", text: $note, axis: .vertical)
+                .lineLimit(1...3)
+        }
+    }
+
+    // MARK: - 输入行
+
+    private var durationRow: some View {
+        numberField(title: "时长", text: $minutesText, unit: "分钟", placeholder: "60", label: "时长，单位分钟")
+    }
+
+    private var distanceRow: some View {
+        numberField(title: "距离", text: $distanceText, unit: "km", placeholder: "0", label: "距离，单位公里")
+    }
+
+    private var elevationRow: some View {
+        numberField(title: "爬升", text: $elevationText, unit: "m", placeholder: "0", label: "累计爬升，单位米")
+    }
+
+    private var kcalRow: some View {
+        numberField(title: "消耗", text: $manualKcalText, unit: "kcal", placeholder: Fmt.kcal(estimatedKcal), label: "消耗热量，留空按公式估算")
+    }
+
+    private func numberField(
+        title: String,
+        text: Binding<String>,
+        unit: String,
+        placeholder: String,
+        label: String
+    ) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            TextField(placeholder, text: text)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: 88)
+                .accessibilityLabel(label)
+            Text(unit)
+                .foregroundColor(.secondary)
         }
     }
 
