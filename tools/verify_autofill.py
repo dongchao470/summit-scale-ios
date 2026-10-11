@@ -52,11 +52,27 @@ def main():
         )
 
     # 2. 自动补录写完条目后要落标记
-    raf = function_body("runAutoFill", src)
+    #    0.3.3 起自动补录拆成两步：pendingAutoFills 只算不写、applyAutoFills 才落库，
+    #    中间夹一个「记进今天 / 今天不用」的确认，所以标记落在 applyAutoFills 里。
+    raf = function_body("applyAutoFills", src)
     if raf is None:
-        problems.append("找不到 runAutoFill")
+        problems.append("找不到 applyAutoFills")
     elif "markAutoFilled" not in raf:
-        problems.append("runAutoFill 写入之后没有调用 markAutoFilled")
+        problems.append("applyAutoFills 写入之后没有调用 markAutoFilled")
+
+    # 2b. 只算不写的那一步绝不能碰库，否则确认框就成了摆设
+    paf = function_body("pendingAutoFills", src)
+    if paf is None:
+        problems.append("找不到 pendingAutoFills")
+    elif "addFood" in paf or "markAutoFilled" in paf:
+        problems.append("pendingAutoFills 里出现了写库调用：弹确认之前就已经记账了")
+
+    # 2c. 用户选「今天不用」也要落标记，否则同一天会反复弹
+    saf = function_body("skipAutoFills", src)
+    if saf is None:
+        problems.append("找不到 skipAutoFills")
+    elif "markAutoFilled" not in saf:
+        problems.append("skipAutoFills 没落标记：选过「今天不用」还会一次次弹")
 
     # 3. 去重判断要读持久化标记，不能只看条目（否则删了条目会被重新补回来）
     haf = function_body("hasAutoFilled", src)

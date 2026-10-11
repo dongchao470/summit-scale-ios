@@ -142,7 +142,8 @@ def main():
             print("行 %d: %s" % (new_rows[i][0], new_rows[i][1].strip()))
 
     ok = (
-        len(new_rows) == 150
+        # 0.3.3 起清理掉 4 条同名重复，条数不再是 150，这里只保留下限。
+        len(new_rows) >= 140
         and n_bad_cols == 0
         and n_bad_num == 0
         and n_bad_cat == 0
