@@ -129,33 +129,41 @@ struct TrendsView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: Theme.stackSpacing) {
+            List {
+                Section {
                     Picker("时间范围", selection: $span) {
                         ForEach(Span.allCases) { item in
                             Text(item.title).tag(item)
                         }
                     }
                     .pickerStyle(.segmented)
-
-                    summaryCard
-                    weightCard
-                    intakeCard
-                    activityCard
+                    .labelsHidden()
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .padding(.bottom, 96)
+
+                summarySection
+                weightSection
+                intakeSection
+                activitySection
             }
-            .background(Theme.pageBackground)
+            .listStyle(.insetGrouped)
             .navigationTitle("趋势")
         }
     }
 
-    private var summaryCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            CardTitle(text: "这段时间", symbol: "calendar")
+    /// 分组标题统一带一个强调色小图标，跟今天页的餐次标题一个路数。
+    private func sectionHeader(_ text: String, symbol: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(Theme.accent)
+                .accessibilityHidden(true)
+            Text(text)
+        }
+        .textCase(nil)
+    }
 
+    private var summarySection: some View {
+        Section {
             HStack(spacing: 8) {
                 StatTile(
                     title: "平均摄入",
@@ -175,26 +183,18 @@ struct TrendsView: View {
                     unit: "天"
                 )
             }
+            .padding(.vertical, 6)
 
             Text(budget.map { "每日摄入目标 \(Fmt.kcal($0.intakeTarget)) kcal" } ?? "先完成档案，才会算出目标")
                 .font(.caption)
                 .foregroundColor(.secondary)
+        } header: {
+            sectionHeader("这段时间", symbol: "calendar")
         }
-        .card()
     }
 
-    private var weightCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                CardTitle(text: "体重走向", symbol: "scalemass.fill")
-                Spacer()
-                if let change = weightChange {
-                    Text(change <= 0 ? "↓ \(Fmt.kg(abs(change))) kg" : "↑ \(Fmt.kg(change)) kg")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(change <= 0 ? Theme.success : Theme.warning)
-                }
-            }
-
+    private var weightSection: some View {
+        Section {
             if weightPoints.count < 2 {
                 emptyHint("这段区间至少记两次体重，曲线才画得出来")
             } else {
@@ -235,22 +235,26 @@ struct TrendsView: View {
                 }
                 .frame(height: 190)
             }
-        }
-        .card()
-    }
-
-    private var intakeCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                CardTitle(text: "每日摄入", symbol: "fork.knife")
+        } header: {
+            HStack(spacing: 6) {
+                Image(systemName: "scalemass.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(Theme.accent)
+                    .accessibilityHidden(true)
+                Text("体重走向")
                 Spacer()
-                if let budget = budget {
-                    Text("目标线 \(Fmt.kcal(budget.intakeTarget))")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                if let change = weightChange {
+                    Text(change <= 0 ? "↓ \(Fmt.kg(abs(change))) kg" : "↑ \(Fmt.kg(change)) kg")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(change <= 0 ? Theme.success : Theme.warning)
                 }
             }
+            .textCase(nil)
+        }
+    }
 
+    private var intakeSection: some View {
+        Section {
             if loggedDays == 0 {
                 emptyHint("还没有饮食记录")
             } else {
@@ -283,60 +287,62 @@ struct TrendsView: View {
                 }
                 .frame(height: 170)
             }
+        } header: {
+            HStack(spacing: 6) {
+                Image(systemName: "fork.knife")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(Theme.accent)
+                    .accessibilityHidden(true)
+                Text("每日摄入")
+                Spacer()
+                if let budget = budget {
+                    Text("目标线 \(Fmt.kcal(budget.intakeTarget))")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .textCase(nil)
         }
-        .card()
     }
 
-    private var activityCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            CardTitle(text: "运动消耗", symbol: "figure.walk")
-
+    private var activitySection: some View {
+        Section {
             if activities.filter({ $0.date >= startDay }).isEmpty {
                 emptyHint("这段时间还没有运动记录")
             } else {
-                let recent = activities.filter { $0.date >= startDay }.prefix(6)
-                VStack(spacing: 0) {
-                    ForEach(Array(recent.enumerated()), id: \.element.objectID) { index, entry in
-                        HStack(spacing: 10) {
-                            Image(systemName: entry.kindValue.symbol)
-                                .font(.footnote.weight(.semibold))
-                                .foregroundColor(Theme.success)
-                                .frame(width: 26, height: 26)
-                                .background(Theme.success.opacity(0.14), in: Circle())
+                let recent = Array(activities.filter { $0.date >= startDay }.prefix(6))
+                ForEach(recent, id: \.objectID) { entry in
+                    HStack(spacing: 10) {
+                        Image(systemName: entry.kindValue.symbol)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(Theme.success)
+                            .frame(width: 26)
 
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(entry.displayTitle)
-                                    .font(.subheadline)
-                                    .foregroundColor(.primary)
-                                Text(Fmt.relativeDay(entry.date))
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-
-                            Spacer()
-
-                            Text("-\(Fmt.kcal(entry.kcal)) kcal")
-                                .font(Theme.number(15))
-                                .foregroundColor(Theme.success)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(entry.displayTitle)
+                                .font(.subheadline)
+                            Text(Fmt.relativeDay(entry.date))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                         }
-                        .padding(.vertical, 8)
 
-                        if index < recent.count - 1 {
-                            Divider().opacity(0.5)
-                        }
+                        Spacer(minLength: 4)
+
+                        Text("-\(Fmt.kcal(entry.kcal)) 千卡")
+                            .font(Theme.number(15))
+                            .foregroundColor(Theme.success)
                     }
                 }
             }
+        } header: {
+            sectionHeader("运动消耗", symbol: "figure.walk")
         }
-        .card()
     }
 
     private func emptyHint(_ text: String) -> some View {
         Text(text)
             .font(.footnote)
             .foregroundColor(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 18)
     }
 
     private struct DayValue: Identifiable {
