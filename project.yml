@@ -41,8 +41,8 @@ targets:
       properties:
         CFBundleDisplayName: 山与秤
         CFBundleName: SummitScale
-        CFBundleShortVersionString: "0.3.2"
-        CFBundleVersion: "5"
+        CFBundleShortVersionString: "0.3.3"
+        CFBundleVersion: "6"
         LSRequiresIPhoneOS: true
         UIUserInterfaceStyle: Automatic
         ITSAppUsesNonExemptEncryption: false
