@@ -20,12 +20,12 @@ struct CalorieRingView: View {
     private var ring: some View {
         ZStack {
             Circle()
-                .stroke(Color.accentColor.opacity(0.15), lineWidth: 12)
+                .stroke(Theme.accent.opacity(0.15), lineWidth: 12)
 
             Circle()
                 .trim(from: 0, to: min(1, max(0, ledger.progress)))
                 .stroke(
-                    isOver ? Color.orange : Color.accentColor,
+                    isOver ? Theme.warning : Theme.accent,
                     style: StrokeStyle(lineWidth: 12, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
@@ -34,7 +34,7 @@ struct CalorieRingView: View {
                 Text(Fmt.kcal(abs(ledger.remainingKcal)))
                     .font(.title3.weight(.semibold))
                     .monospacedDigit()
-                    .foregroundColor(isOver ? .orange : .primary)
+                    .foregroundColor(isOver ? Theme.warning : .primary)
                 Text(isOver ? "超出" : "还能吃")
                     .font(.caption2)
                     .foregroundColor(.secondary)
@@ -58,7 +58,7 @@ struct CalorieRingView: View {
             legendRow(
                 title: "运动",
                 value: ledger.burnKcal > 0 ? "+" + Fmt.kcal(ledger.burnKcal) : "0",
-                color: ledger.burnKcal > 0 ? .green : .secondary
+                color: ledger.burnKcal > 0 ? .primary : .secondary
             )
         }
     }

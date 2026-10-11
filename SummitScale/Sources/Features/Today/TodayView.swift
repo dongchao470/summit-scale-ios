@@ -183,33 +183,9 @@ struct TodayView: View {
     // MARK: - 热量卡
 
     private func calorieCard(_ ledger: DayLedger) -> some View {
-        VStack(spacing: 16) {
-            CalorieRingView(ledger: ledger)
-
-            HStack(spacing: 8) {
-                StatTile(
-                    title: "已摄入",
-                    value: Fmt.kcal(ledger.intakeKcal),
-                    unit: "kcal",
-                    tint: Theme.accent,
-                    symbol: "fork.knife"
-                )
-                StatTile(
-                    title: "预算",
-                    value: Fmt.kcal(ledger.budget.intakeTarget),
-                    unit: "kcal",
-                    tint: .primary,
-                    symbol: "target"
-                )
-                StatTile(
-                    title: ledger.isOverBudget ? "超出" : "还能吃",
-                    value: Fmt.kcal(abs(ledger.remainingKcal)),
-                    unit: "kcal",
-                    tint: ledger.isOverBudget ? Theme.warning : Theme.success,
-                    symbol: ledger.isOverBudget ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
-                )
-            }
-        }
+        // 环中心已写「还能吃」，右侧图例已写目标/已吃/运动；
+        // 原来下面那排 StatTile（已摄入/预算/还能吃）是同一组数字再印一遍，纯冗余，删掉。
+        CalorieRingView(ledger: ledger)
     }
 
     // MARK: - 营养素卡
@@ -553,7 +529,7 @@ struct TodayView: View {
                         .frame(minHeight: 32)
                 }
                 .buttonStyle(.bordered)
-                .tint(Theme.success)
+                .tint(Theme.accent)
             }
 
             if todayActivities.isEmpty {
@@ -566,7 +542,7 @@ struct TodayView: View {
                         title: "消耗",
                         value: Fmt.kcal(ledger?.burnKcal ?? 0),
                         unit: "kcal",
-                        tint: Theme.success,
+                        tint: Theme.accent,
                         symbol: "flame.fill"
                     )
                     StatTile(
@@ -589,7 +565,7 @@ struct TodayView: View {
                     HStack(spacing: 10) {
                         Image(systemName: activity.kindValue.symbol)
                             .font(.footnote.weight(.semibold))
-                            .foregroundColor(Theme.success)
+                            .foregroundColor(Theme.accent)
                             .frame(width: 22)
                             .accessibilityHidden(true)
 

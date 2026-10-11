@@ -97,9 +97,10 @@ struct MacroPanel: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            MacroBar(title: "蛋白质", grams: protein, target: budget.macros.protein, color: Theme.protein)
-            MacroBar(title: "碳水", grams: carbs, target: budget.macros.carbs, color: Theme.carbs)
-            MacroBar(title: "脂肪", grams: fat, target: budget.macros.fat, color: Theme.fat)
+            // 三条统一走强调色，靠左侧名称区分，不再红橙蓝三色同屏；超支由 MacroBar 内部转红。
+            MacroBar(title: "蛋白质", grams: protein, target: budget.macros.protein, color: Theme.accent)
+            MacroBar(title: "碳水", grams: carbs, target: budget.macros.carbs, color: Theme.accent)
+            MacroBar(title: "脂肪", grams: fat, target: budget.macros.fat, color: Theme.accent)
         }
     }
 }
@@ -130,14 +131,10 @@ struct GoalProgressBar: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 Spacer()
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text(progress >= 1 ? "已达标" : "还差 \(Fmt.kg(abs(remaining))) kg")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(progress >= 1 ? Theme.success : Theme.accent)
-                    Text("目标 \(Fmt.kg(target)) kg")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                // 「目标 XX kg」在下面那排标尺已经印了一次，这里不再重复，只留还差多少。
+                Text(progress >= 1 ? "已达标" : "还差 \(Fmt.kg(abs(remaining))) kg")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(progress >= 1 ? Theme.success : Theme.accent)
             }
 
             GeometryReader { geometry in
