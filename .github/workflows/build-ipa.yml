@@ -44,6 +44,7 @@ jobs:
         run: |
           python3 tools/verify_food.py
           python3 tools/verify_autofill.py
+          python3 tools/verify_images.py
 
       - name: Generate project
         run: xcodegen generate --spec project.yml

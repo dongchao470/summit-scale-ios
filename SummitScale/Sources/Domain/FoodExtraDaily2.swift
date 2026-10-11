@@ -151,5 +151,6 @@ extension FoodLibrary {
     d2_sparkling_water|气泡水|饮品|0|0.0|0.0|0.0|500|1 瓶
     d2_pear_juice|梨汁|饮品|45|0.2|11.0|0.1|300|1 杯
     d2_chili_oil|辣椒油|调味|900|0.0|0.0|100.0|10|1 勺
+    d2_seaweed_egg_soup|紫菜蛋花汤|汤粥|25|2.0|2.0|1.2|300|1 碗
     """
 }
