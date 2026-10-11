@@ -295,7 +295,6 @@ struct TodayView: View {
         .card()
     }
 
-    @ViewBuilder
     /// 列表缩进两档，全 App 只此一处定义。
     ///
     /// 一级 26：单独添加的条目，与餐次标题的文字左边缘对齐。
@@ -303,6 +302,7 @@ struct TodayView: View {
     private static let singleIndent: CGFloat = 26
     private static let groupIndent: CGFloat = 46
 
+    @ViewBuilder
     private func mealSection(_ meal: MealType) -> some View {
         let entries = todayFoods.filter { $0.mealValue == meal }
         let kcal = entries.reduce(0) { $0 + $1.kcal }
