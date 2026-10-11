@@ -153,3 +153,33 @@
 ## 5. 「加功能」清单（等用户继续给）
 
 - 候选池（来自第 4 迭代原计划）：照片叠加对比、目标与里程碑、小组件、导出与备份。
+
+---
+
+## 6. v0.3.3（2026-10-11）五条问题的修复记录
+
+用户原话：通知点进来直接入账得给个确认；套餐进来的条目该按套餐显示；
+联网查的热量基本是 0 还不能编辑；本地库太少（搜「炒米粉」都没有）；接口全是 0 也不行。
+按「优先找更好的接口」的要求先做了数据源调研，再逐条改。
+
+| # | 问题 | 改法 | 落地位置 |
+|---|---|---|---|
+| 1 | 通知/自动补录不问自记 | 拆成「只算不写」+「写」两步，中间弹 `confirmationDialog`（记进今天 / 今天不用）；「今天不用」也落标记，避免同一天反复弹；通知带 `userInfo`，冷启动补 `resyncAll` | `Store+Template.swift`、`RootTabView.swift`、`Reminders.swift` |
+| 2 | 套餐条目一条条平铺 | 自动补录与手动一键加统一写 `externalID = autoFillKey(...)`，今日页按这个键分桶折叠成一行、可展开 | `Store+Template.swift`、`TodayView.swift` |
+| 3 | 联网条目热量恒为 0 | 下厨房没有营养表，改成用本地库同名条目补值并显示「按本地「X」估」；补到营养的排前面；Open Food Facts 中国站长期 503，改成先试中国站再落世界站 | `FoodSearchService.swift` |
+| 4 | 联网条目不可编辑 | 记一笔页新增「每 100 g 营养」四个输入框，改完连带份量折算；取不到值时留空让用户填 | `AddFoodSheet.swift` |
+| 5 | 本地库太少 | 454 → 2009 条：新增中式成菜表（炒米粉、螺蛳粉、肠粉、烧鹅等）+《中国食物成分表》数据集 1503 条；顺手清掉 10 组同名重复、修掉本地列表写死的 `imageURL: nil` | `FoodExtraCooked.swift`、`FoodExtraCFCT.swift`、`FoodLibrary.swift`、`FoodPickerSheet.swift` |
+
+**顺带修的**：`Store.addFood` 原来一律写 `source = "manual"`，联网/套餐来源全丢 —— 新增
+`Domain/FoodSource.swift`，入账时记真实来源。
+
+**数据来源与口径**：成分表数据集取自 GitHub `Sanotsu/china-food-composition-data`，
+只保留热量/蛋白/碳水/脂肪四项齐全的 1503 条，非数字值（`—` `Tr` `…`）整条丢弃不补 0。
+转换统计见 `/workspace/tmp/cfct_report.md`。该数据集只有食材没有成菜，「炒米粉」这类靠手写表补。
+
+**验证**：`tools/verify_food.py`、`tools/verify_autofill.py`、`tools/verify_food2.py` 本地退出码 0；
+GitHub Actions `6d5c7dd3` 编译通过，产出 `SummitScale-0.3.3-build6-unsigned.ipa`。
+**未做真机验证** —— 需用户安装后确认通知确认框、套餐折叠、联网补值、营养编辑四处。
+
+**待观察**：`FoodExtraCFCT.swift` 里 8 条记录的热量与 4/4/9 公式对不上（膳食纤维计入热量但
+不计入碳水），已有注释说明并从 CI 门槛里豁免，只在脚本输出里提示。
