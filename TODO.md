@@ -320,3 +320,75 @@ Info.plist 的 `CFBundleShortVersionString` / `CFBundleVersion` 是**两处**，
 **未做真机验证** —— build 9 未交付，build 10 已交付待用户安装确认：
 饮食库能进、有图条目显示图片、无图条目显示分类图标而不是留白。
 若仍崩，需取新 `.ips` 再定位（重点看是否还落在 `dictionaryLiteral`，若否说明根因另有其处）。
+
+---
+
+## 8. v0.4.0 ~ v0.4.1（2026-10-11）界面收色 + 三处「省心」改动
+
+用户原话两条：「体重不用输入用那种闹钟滚动的，单独加食物没有和标准餐对齐，当前 ui 颜色还是
+有点花…不是特别 ios 风格」「通知添加的时候可以编辑，而不是只有确认和否认，编辑只针对当前，
+不是原标准，可以增删改…另外视频编辑按钮新增编辑，不能自由删除」。
+
+### 8.1 v0.4.0 build 11：收配色、体重滚轮、缩进对齐
+
+| 改动 | 做法 | 落地位置 |
+| --- | --- | --- |
+| 配色花、不够 iOS | 重写 `Theme`：单一山青 `accent`、成功/警告改系统语义色、卡片 16 / 控件 10 两档圆角，全局清掉渐变与彩色投影 | `Support/Theme.swift` |
+| 体重靠手输 | `AddWeightSheet` 改滚轮 `Picker` | `Features/Weight/AddWeightSheet.swift` |
+| 加食物与标准餐没对齐 | `foodRow` 缩进参数化，两档统一 | `Features/Today/TodayView.swift` |
+
+### 8.2 v0.4.1 build 12：补记昨天、条目可编辑、套餐改完再记
+
+| # | 需求 | 做法 | 落地位置 |
+| --- | --- | --- | --- |
+| 1 | 补记昨天 | 食物卡标题栏加「补记昨天」，点一下把日期拨到昨天再开记一笔页 | `TodayView.swift`、`AddFoodSheet.swift` |
+| 2 | 条目可编辑 | 条目菜单加「改这条」（`pencil`），进页面改名称/份量/餐次；**编辑页不给删除**，删除仍走原菜单的 `role: .destructive` | `TodayView.swift`、`AddFoodSheet.swift`、`Store.swift` |
+| 3 | 套餐改完再记 | 提醒确认框加第三个按钮，打开新建的 `TemplateFillSheet`：摊开套餐条目可增删改，按每克热量随份量折算，**只影响这一次**，原套餐不动 | `TemplateFillSheet.swift`（新增）、`TodayView.swift` |
+
+**新增的 Store 方法**：`updateFood(_:name:meal:grams:kcal:date:)` 只回写这五个字段，
+**不碰配图、来源、externalID** —— 编辑一次不能把配图弄丢（沿用 v0.3.5 的单字段存资源名约定）。
+
+**设计取舍**：套餐「改完再记」没做成给 `AddFoodSheet` 加参数 —— 套餐是**多条**，
+参数化解决不了，只能新开一个页面把条目摊开。写入复用现有 `Store.addFood`，
+没有去动 `Store+Template.swift` 的 `writeItems`，缩小爆炸半径。
+
+### 8.3 这次踩到的坑：Swift 小字符串优化会骗过「文案入包」验证
+
+交付前想确认新页面的文案真进了 IPA，先用了 `strings -a`，**新文案命中全 0**，
+差点误判成没编译进去。真实原因是两条：
+
+1. `strings` 默认只认 ASCII 可打印字符，中文 UTF-8 字节（≥ 0x80）一律不算，
+   所以中文文案用 `strings` **永远扫不到**。要改用 `grep -a` 直接按字节匹配。
+2. 即便换了 `grep -a`，**≤ 15 字节的字符串字面量会被 Swift 内联成立即数**，
+   根本不进 `__TEXT,__cstring`，照样扫不到。
+
+实测的分界线（同一份二进制，UTF-8 字节数 vs 是否进 cstring）：
+
+| 文案 | 字节数 | `grep -a` 命中 |
+| --- | --- | --- |
+| 改这条 | 9 | 0 |
+| 这几样 | 9 | 0 |
+| 改完再记 | 12 | 0 |
+| 补记昨天 | 12 | 0 |
+| 记到哪餐 | 12 | 0 |
+| 只影响这一次 | 18 | 1 |
+| 今天吃了什么 | 18 | 1 |
+| 原套餐不会被改动 | 24 | 1 |
+
+**结论**：验证「某个改动是否真的进包」，**不要拿短中文文案当探针**。可靠办法是查
+类型/方法的 mangled 符号 —— 本次用了两个：
+
+- `TemplateFillSheet` 符号出现 **207 次**（含 `_$s11SummitScale17TemplateFillSheetV…`）
+- `updateFood` 的 mangled 名 `_$s11SummitScale11PersistenceC10updateFood_4name4meal5grams4kcal4dateyAA0E5EntryC_SSAA8MealTypeOS2d10Foundation4DateVtF`
+
+两者都在，才算新代码真进了二进制。
+
+**验证**：本地括号配平与字段名核对通过（`TemplateItem` 的 `items` / `meal` / `name` /
+`grams` / `kcal` 与 `Store+Template.swift` 用法逐一对齐）；GitHub Actions
+`db30298f`（run 29）48 秒 success；产物 `SummitScale-0.4.1-build12-unsigned.ipa`
+6372898 字节，sha256 与 CI 附带一致；Info.plist 短版本 0.4.1 / 构建号 12 / 最低系统 16.0。
+**未做真机验证** —— 需用户安装后确认：补记昨天的日期落在昨天、条目编辑能改且不丢配图、
+套餐「改完再记」改完只影响这一次。
+
+**已知遗留**：套餐「改完再记」里新加或改过的条目会写 `protein/carbs/fat = 0`
+（清单只编辑名称、份量、热量），后续若要四项齐全得再补。
