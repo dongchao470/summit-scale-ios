@@ -92,6 +92,25 @@ struct TrendsView: View {
         return result
     }
 
+    /// 热力图专用：固定取最近 17 周（约 4 个月），不跟随上面的 7/30/90 天切换。
+    private var heatmapIntake: [DayValue] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let start = calendar.date(byAdding: .day, value: -(17 * 7 - 1), to: today) ?? today
+        var byDay: [Date: Double] = [:]
+        for entry in foods where entry.date >= start {
+            byDay[calendar.startOfDay(for: entry.date), default: 0] += entry.kcal
+        }
+        var result: [DayValue] = []
+        var cursor = start
+        while cursor <= today {
+            result.append(DayValue(day: cursor, value: byDay[cursor] ?? 0))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        return result
+    }
+
     /// 只统计真正记过东西的日子，否则平均值会被空白日拉低。
     private var averageIntake: Double {
         let logged = dailyIntake.filter { $0.value > 0 }
@@ -199,7 +218,7 @@ struct TrendsView: View {
     private var recordSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                RecordHeatmap(days: dailyIntake, target: budget?.intakeTarget)
+                RecordHeatmap(days: heatmapIntake, target: budget?.intakeTarget)
 
                 HStack(spacing: 6) {
                     Text("少")
