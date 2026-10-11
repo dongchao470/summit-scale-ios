@@ -32,7 +32,8 @@ struct FoodItem: Identifiable, Hashable {
 ///
 /// 数据写成一个紧凑的多行字符串再解析，比几百行构造器短，也方便逐条校对。
 enum FoodLibrary {
-    /// 主表 + 四张补充表（日常菜、第二批日常、火锅、咖啡奶茶），合并成一份库。
+    /// 主表 + 六张补充表（日常菜、第二批日常、火锅、咖啡奶茶、中式成菜、成分表数据集），
+    /// 合并成一份库。
     static let items: [FoodItem] = parse(allRaw)
 
     /// 分类按固定顺序排，免得每加一批数据就把目录顺序打乱。
@@ -52,7 +53,8 @@ enum FoodLibrary {
     }
 
     private static var allRaw: String {
-        [raw, extraDailyRaw, extraDaily2Raw, extraHotpotRaw, extraCafeRaw].joined(separator: "\n")
+        [raw, extraDailyRaw, extraDaily2Raw, extraHotpotRaw, extraCafeRaw, extraCookedRaw, extraCFCTRaw]
+            .joined(separator: "\n")
     }
 
     static func items(in category: String) -> [FoodItem] {
@@ -206,7 +208,6 @@ enum FoodLibrary {
     wine_red|红酒|饮品|85|0.1|2.5|0|150|1 杯
     baijiu|白酒（52 度）|饮品|322|0|0.1|0|50|1 两
     americano|美式咖啡|饮品|2|0.1|0.3|0|240|1 杯
-    latte|拿铁|饮品|55|3.0|4.5|3.0|240|1 杯
     milk_tea|奶茶（全糖）|饮品|70|0.8|13.0|1.8|500|1 杯
     sports_drink|运动饮料|饮品|26|0|6.4|0|500|1 瓶
     burger|汉堡（牛肉）|快餐|250|12.0|28.0|10.0|200|1 个

@@ -29,8 +29,14 @@ enum Reminders {
         content.title = "该记\(template.meal.title)了"
         content.body = template.items.isEmpty
             ? "「\(template.name)」还是空的，先把内容配好。"
-            : "「\(template.name)」可以直接入账，约 \(Fmt.kcal(template.totalKcal)) 千卡。"
+            : "「\(template.name)」到点了，打开 App 确认一下就记上，约 \(Fmt.kcal(template.totalKcal)) 千卡。"
         content.sound = .default
+        // 挂上套餐身份，通知点开时才知道是哪条套餐的提醒。
+        // （App 目前还没接 UNUserNotificationCenterDelegate，先把信息备好。）
+        content.userInfo = [
+            "templateID": template.id.uuidString,
+            "templateName": template.name,
+        ]
 
         var components = DateComponents()
         components.hour = Int(template.autoFillHour)
@@ -55,6 +61,17 @@ enum Reminders {
             UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
                 continuation.resume(returning: requests.count)
             }
+        }
+    }
+
+    /// 冷启动时把该排的提醒补排一遍。
+    ///
+    /// 用户一开始拒了通知权限、后来又去系统设置里打开的话，
+    /// 之前 `sync` 失败的提醒不会自己回来——这里重排一次补上。
+    /// `sync` 内部是「先撤销再登记」，重复调用没有副作用。
+    static func resyncAll(_ templates: [MealTemplate]) {
+        for template in templates where template.autoFillEnabled {
+            sync(template)
         }
     }
 

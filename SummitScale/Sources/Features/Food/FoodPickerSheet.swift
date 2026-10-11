@@ -50,6 +50,61 @@ struct PickedFood: Identifiable, Hashable {
         isRemote = true
     }
 
+    /// 全参数构造，只给 `replacingNutrients` 用。
+    private init(
+        id: String,
+        name: String,
+        brand: String?,
+        category: String,
+        imageURL: String?,
+        kcalPer100: Double,
+        proteinPer100: Double,
+        carbsPer100: Double,
+        fatPer100: Double,
+        commonGrams: Double,
+        commonLabel: String,
+        isRemote: Bool
+    ) {
+        self.id = id
+        self.name = name
+        self.brand = brand
+        self.category = category
+        self.imageURL = imageURL
+        self.kcalPer100 = kcalPer100
+        self.proteinPer100 = proteinPer100
+        self.carbsPer100 = carbsPer100
+        self.fatPer100 = fatPer100
+        self.commonGrams = commonGrams
+        self.commonLabel = commonLabel
+        self.isRemote = isRemote
+    }
+
+    /// 复制一份，只换每 100 克的营养值。
+    ///
+    /// 联网来源经常没有营养表（下厨房干脆不返回，只有菜名和图），
+    /// 靠本地同名菜兜底也未必准，所以记一笔页面得让用户自己校准一遍。
+    func replacingNutrients(
+        kcalPer100: Double,
+        proteinPer100: Double,
+        carbsPer100: Double,
+        fatPer100: Double
+    ) -> PickedFood {
+        PickedFood(
+            id: id,
+            name: name,
+            brand: brand,
+            category: category,
+            imageURL: imageURL,
+            kcalPer100: kcalPer100,
+            proteinPer100: proteinPer100,
+            carbsPer100: carbsPer100,
+            fatPer100: fatPer100,
+            commonGrams: commonGrams,
+            commonLabel: commonLabel,
+            isRemote: isRemote
+        )
+    }
+
     /// 列表里显示的完整名称：品牌跟在后面。
     var displayName: String {
         guard let brand = brand, !brand.isEmpty else { return name }
@@ -199,7 +254,9 @@ struct FoodPickerSheet: View {
                             name: item.name,
                             subtitle: "\(item.category) · 一份 \(item.commonLabel) \(Fmt.grams(item.commonGrams)) g",
                             kcalPer100: item.kcalPer100g,
-                            imageURL: nil
+                            // 本地条目本身不带图，取 FoodImages 里按 id 配的图；
+                            // 没配到的条目会退回分类图标，不会留空白。
+                            imageURL: item.imageURL
                         )
                     }
                     .buttonStyle(.plain)

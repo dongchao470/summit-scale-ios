@@ -319,7 +319,7 @@ enum FoodImages {
         "lamb_lean": "https://i2.chuimg.com/7b97e5dab0e24c1ba6e6e8357be295b4_1280w_1024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
         "lard": "https://i2.chuimg.com/1eda28fb9c13478fa405c17ef78ff476_550w_439h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
         "latiao": "https://i2.chuimg.com/49df62c98c044921b63d8fefbd9e7265_1050w_1400h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "latte": "https://i2.chuimg.com/e5dcf660b7874701b6c8cc4c71d8a80b_1241w_1862h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
+        "cf_latte": "https://i2.chuimg.com/e5dcf660b7874701b6c8cc4c71d8a80b_1241w_1862h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
         "leek": "https://i2.chuimg.com/f2879c07f2fa44c1a0b080587e718be1_1000w_750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
         "leek_egg": "https://i2.chuimg.com/45569d361d5040c38df67e24c18e992c_1242w_994h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
         "lemon": "https://i2.chuimg.com/ae564cbfd61e436bb33f71498d7722f8_1536w_2048h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",

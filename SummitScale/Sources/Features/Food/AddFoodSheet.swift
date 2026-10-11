@@ -15,6 +15,11 @@ struct AddFoodSheet: View {
     @State private var manualKcalText = ""
     @State private var manualGramsText = ""
     @State private var showPicker = false
+    /// 每 100 克营养的输入文本：联网来源经常没有营养表，得让用户自己改。
+    @State private var kcal100Text = ""
+    @State private var protein100Text = ""
+    @State private var carbs100Text = ""
+    @State private var fat100Text = ""
     @FocusState private var focusedField: Field?
 
     /// 需要自己收键盘的输入框。
@@ -23,6 +28,10 @@ struct AddFoodSheet: View {
         case manualName
         case manualKcal
         case manualGrams
+        case kcal100
+        case protein100
+        case carbs100
+        case fat100
     }
 
     /// 按当前时间猜默认餐次，省得每次都手动切。
@@ -55,6 +64,35 @@ struct AddFoodSheet: View {
             return !manualName.trimmingCharacters(in: .whitespaces).isEmpty && manualKcal > 0
         }
         return picked != nil && grams > 0
+    }
+
+    /// 当前选中的食物，营养值取输入框里的（用户可能手动改过）。
+    private var editedFood: PickedFood? {
+        picked?.replacingNutrients(
+            kcalPer100: nutrientValue(kcal100Text),
+            proteinPer100: nutrientValue(protein100Text),
+            carbsPer100: nutrientValue(carbs100Text),
+            fatPer100: nutrientValue(fat100Text)
+        )
+    }
+
+    /// 把营养值搬进输入框：0 就留空，免得看起来像「已经填好了」。
+    private func applyNutrientTexts(_ food: PickedFood) {
+        kcal100Text = nutrientText(food.kcalPer100)
+        protein100Text = nutrientText(food.proteinPer100)
+        carbs100Text = nutrientText(food.carbsPer100)
+        fat100Text = nutrientText(food.fatPer100)
+    }
+
+    private func nutrientText(_ value: Double) -> String {
+        guard value > 0 else { return "" }
+        return value.rounded() == value
+            ? String(Int(value))
+            : String(format: "%.1f", value)
+    }
+
+    private func nutrientValue(_ text: String) -> Double {
+        Double(text.trimmingCharacters(in: .whitespaces)) ?? 0
     }
 
     var body: some View {
@@ -101,6 +139,7 @@ struct AddFoodSheet: View {
                     picked = food
                     grams = food.commonGrams
                     gramsText = Fmt.grams(food.commonGrams)
+                    applyNutrientTexts(food)
                 }
             }
         }
@@ -111,7 +150,7 @@ struct AddFoodSheet: View {
     @ViewBuilder
     private var foodSection: some View {
         Section("吃什么") {
-            if let food = picked {
+            if let food = editedFood {
                 HStack(spacing: 12) {
                     FoodThumb(urlString: food.imageURL, size: 56)
                     VStack(alignment: .leading, spacing: 3) {
@@ -179,6 +218,45 @@ struct AddFoodSheet: View {
                 }
             }
         }
+
+        if picked != nil {
+            nutrientSection
+        }
+    }
+
+    /// 每 100 克营养，手动可改。
+    ///
+    /// 联网查来的条目经常没有营养表（下厨房只给菜名和图），本地库又对不上同名菜的话
+    /// 四项全是 0；不给个输入口，用户就只能眼睁睁记一条 0 千卡的账。
+    private var nutrientSection: some View {
+        Section {
+            nutrientRow("热量", unit: "千卡", text: $kcal100Text, field: .kcal100)
+            nutrientRow("蛋白质", unit: "g", text: $protein100Text, field: .protein100)
+            nutrientRow("碳水", unit: "g", text: $carbs100Text, field: .carbs100)
+            nutrientRow("脂肪", unit: "g", text: $fat100Text, field: .fat100)
+        } header: {
+            Text("每 100 g 营养")
+        } footer: {
+            Text("取不到数据时这里是空的，自己填一个准的；上面的份量会跟着一起折算。")
+        }
+    }
+
+    private func nutrientRow(
+        _ title: String,
+        unit: String,
+        text: Binding<String>,
+        field: Field
+    ) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            TextField("0", text: text)
+                .keyboardType(.decimalPad)
+                .focused($focusedField, equals: field)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 72)
+            Text(unit).foregroundColor(.secondary)
+        }
     }
 
     private func portionButton(_ title: String, _ value: Double, food: PickedFood) -> some View {
@@ -241,7 +319,7 @@ struct AddFoodSheet: View {
                 note: "手动输入",
                 date: date
             )
-        } else if let food = picked {
+        } else if let food = editedFood {
             let displayName = [food.brand, food.name]
                 .compactMap { $0 }
                 .filter { !$0.isEmpty }
@@ -257,7 +335,10 @@ struct AddFoodSheet: View {
                 foodID: food.id,
                 note: food.isRemote ? "联网条目" : nil,
                 date: date,
-                imageURL: food.imageURL
+                imageURL: food.imageURL,
+                source: food.isRemote ? FoodSource.remote : FoodSource.library,
+                // 联网条目把外部 id 也存上，方便以后去重和对账。
+                externalID: food.isRemote ? food.id : nil
             )
         }
         dismiss()

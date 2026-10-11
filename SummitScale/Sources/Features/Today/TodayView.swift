@@ -33,6 +33,8 @@ struct TodayView: View {
     @State private var presetMeal: MealType?
     @State private var pendingTemplate: MealTemplate?
     @State private var filledMessage: String?
+    /// 已经展开明细的套餐组；键是 `template:<套餐UUID>`。
+    @State private var expandedGroups: Set<String> = []
 
     // MARK: - 派生数据
 
@@ -346,10 +348,130 @@ struct TodayView: View {
                     .foregroundColor(.secondary)
                     .padding(.leading, 26)
             } else {
-                ForEach(entries) { entry in
+                let split = splitByTemplate(entries)
+                ForEach(split.singles) { entry in
                     foodRow(entry)
                 }
+                ForEach(split.groups) { group in
+                    templateGroupRow(group)
+                }
             }
+        }
+    }
+
+    /// 同一份套餐补进来的几条，在界面上折成一行。
+    private struct TemplateGroup: Identifiable {
+        let id: String
+        let name: String
+        let entries: [FoodEntry]
+
+        var itemCount: Int { entries.count }
+        var totalKcal: Double { entries.reduce(0) { $0 + $1.kcal } }
+    }
+
+    /// 把当餐的条目拆成「零散条目」和「套餐组」两拨。
+    ///
+    /// 套餐身份藏在 `externalID` 里，格式是 `template:<套餐UUID>:<yyyyMMdd>`。
+    /// 一键加和到点补记写的是同一个键，所以同一天同一份套餐的条目自然归到一组。
+    /// 老数据里的 `externalID` 是 nil，会被当成零散条目，不影响显示。
+    private func splitByTemplate(_ entries: [FoodEntry]) -> (singles: [FoodEntry], groups: [TemplateGroup]) {
+        var singles: [FoodEntry] = []
+        var buckets: [String: [FoodEntry]] = [:]
+        var order: [String] = []
+
+        for entry in entries {
+            guard let key = Self.templateKey(of: entry) else {
+                singles.append(entry)
+                continue
+            }
+            if buckets[key] == nil {
+                buckets[key] = []
+                order.append(key)
+            }
+            buckets[key]?.append(entry)
+        }
+
+        let groups: [TemplateGroup] = order.compactMap { key in
+            guard let items = buckets[key] else { return nil }
+            return TemplateGroup(id: key, name: templateName(for: key, first: items.first), entries: items)
+        }
+        return (singles, groups)
+    }
+
+    /// 从 `externalID` 里抠出 `template:<UUID>` 这一段；不是套餐条目就返回 nil。
+    private static func templateKey(of entry: FoodEntry) -> String? {
+        guard let external = entry.externalID, external.hasPrefix("template:") else { return nil }
+        let parts = external.split(separator: ":")
+        guard parts.count >= 2 else { return nil }
+        return "\(parts[0]):\(parts[1])"
+    }
+
+    /// 组名优先查还在的套餐；套餐被删了就退回条目备注里的名字。
+    private func templateName(for key: String, first: FoodEntry?) -> String {
+        let uuid = key.replacingOccurrences(of: "template:", with: "")
+        if let template = templates.first(where: { $0.id.uuidString == uuid }) {
+            return template.name
+        }
+        if let note = first?.note,
+           let open = note.firstIndex(of: "「"),
+           let close = note.firstIndex(of: "」"),
+           open < close {
+            let name = note[note.index(after: open)..<close]
+            if !name.isEmpty { return String(name) }
+        }
+        return "套餐"
+    }
+
+    private func templateGroupRow(_ group: TemplateGroup) -> some View {
+        let expanded = expandedGroups.contains(group.id)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "wand.and.stars")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(Theme.accent)
+                    .frame(width: 36, height: 36)
+                    .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(group.name)
+                        .font(.subheadline.weight(.medium))
+                    Text("套餐 · \(group.itemCount) 样 · " + Fmt.kcal(group.totalKcal) + " kcal")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .monospacedDigit()
+                }
+
+                Spacer()
+
+                Button {
+                    toggleGroup(group.id)
+                } label: {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                .accessibilityLabel(expanded ? "收起套餐明细" : "展开套餐明细")
+            }
+
+            if expanded {
+                ForEach(group.entries) { entry in
+                    foodRow(entry)
+                        .padding(.leading, 22)
+                }
+            }
+        }
+    }
+
+    private func toggleGroup(_ id: String) {
+        if expandedGroups.contains(id) {
+            expandedGroups.remove(id)
+        } else {
+            expandedGroups.insert(id)
         }
     }
 

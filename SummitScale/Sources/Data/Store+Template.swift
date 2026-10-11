@@ -60,6 +60,11 @@ extension Persistence {
     /// `portions` 支持 1.5 份这种缩放；返回写入的条数。
     ///
     /// 入账的同时打上「这天已记过」的标记：手动记过的套餐，到点不该再被自动补一遍。
+    ///
+    /// 这里也写 `autoFillKey`（以前是 nil），有两个原因：
+    /// 一是列表要能看出这几条属于同一份套餐、折叠成一行；
+    /// 二是 `hasAutoFilled` 本来就查这个键，写上之后「先一键加、后到点自动补」
+    /// 就不会在同一天重复写第二份。
     @discardableResult
     func applyTemplate(
         _ template: MealTemplate,
@@ -73,7 +78,7 @@ extension Persistence {
             meal: meal ?? template.meal,
             date: date,
             portions: portions,
-            externalID: nil
+            externalID: Self.autoFillKey(template: template, on: date)
         )
         if written > 0 {
             markAutoFilled(template: template, on: date)
@@ -108,7 +113,7 @@ extension Persistence {
             entry.imageURL = scaled.imageURL
             entry.note = "来自套餐「\(templateName)」"
             entry.createdAt = Date()
-            entry.source = "template"
+            entry.source = FoodSource.template
             entry.externalID = externalID
             written += 1
         }
@@ -159,13 +164,14 @@ extension Persistence {
         UserDefaults.standard.set(true, forKey: Self.autoFillFlagKey(template: template, on: date))
     }
 
-    /// 补填当天已经到点、但还没填过的套餐。
+    /// 到点了、但还没补过的套餐——**只算不写**。
     ///
-    /// iOS 后台不给普通 App 随意跑代码，所以这里不靠后台任务：
-    /// 打开 App / 从后台回来时各查一次，够用且不会漏。
-    /// 返回补上的套餐名，调用方拿去提示用户。
-    func runAutoFill(now: Date = Date()) -> [String] {
-        var filled: [String] = []
+    /// iOS 后台不给普通 App 随意跑代码，所以「到点自动入账」只能做成
+    /// 「你打开 App 时补上」。但补之前必须先问一句：点通知只会把 App 拉到前台，
+    /// 系统不会告诉我们用户到底想不想记。所以这里只把候选挑出来交给界面，
+    /// 等用户点头再调 `applyAutoFills`。
+    func pendingAutoFills(now: Date = Date()) -> [MealTemplate] {
+        var pending: [MealTemplate] = []
         let calendar = Calendar.current
 
         for template in allTemplates() where template.autoFillEnabled {
@@ -177,6 +183,21 @@ extension Persistence {
                 second: 0,
                 of: now
             ), now >= trigger else { continue }
+
+            pending.append(template)
+        }
+        return pending
+    }
+
+    /// 用户点头之后，才把挑出来的套餐补进今天。返回补上的套餐名。
+    @discardableResult
+    func applyAutoFills(_ templates: [MealTemplate], now: Date = Date()) -> [String] {
+        var filled: [String] = []
+
+        for template in templates {
+            guard !template.items.isEmpty else { continue }
+            // 确认弹窗挂着的这段时间里可能已经手动记过了，写之前再查一遍。
+            guard !hasAutoFilled(template: template, on: now) else { continue }
 
             writeItems(
                 template.items,
@@ -190,6 +211,13 @@ extension Persistence {
             filled.append(template.name)
         }
         return filled
+    }
+
+    /// 用户说「今天不用」：记下这天已经处理过，免得每次回前台都再问一遍。
+    func skipAutoFills(_ templates: [MealTemplate], now: Date = Date()) {
+        for template in templates {
+            markAutoFilled(template: template, on: now)
+        }
     }
 }
 

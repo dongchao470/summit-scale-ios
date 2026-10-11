@@ -149,7 +149,9 @@ extension Persistence {
         foodID: String?,
         note: String?,
         date: Date,
-        imageURL: String? = nil
+        imageURL: String? = nil,
+        source: String = FoodSource.manual,
+        externalID: String? = nil
     ) -> FoodEntry {
         let entry = FoodEntry(context: container.viewContext)
         entry.id = UUID()
@@ -165,8 +167,8 @@ extension Persistence {
         entry.imageURL = imageURL
         entry.note = (note?.isEmpty ?? true) ? nil : note
         entry.createdAt = Date()
-        entry.source = "manual"
-        entry.externalID = nil
+        entry.source = source
+        entry.externalID = externalID
         save()
         return entry
     }

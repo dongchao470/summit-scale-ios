@@ -12,6 +12,8 @@ struct RemoteFood: Identifiable, Hashable {
     let proteinPer100: Double
     let carbsPer100: Double
     let fatPer100: Double
+    /// 营养值是照着本地库哪一条估出来的；自带营养表的条目为 nil。
+    let matchedLocal: String?
 
     /// 列表里的副标题：来源 + 每 100 克热量。
     var subtitle: String {
@@ -21,9 +23,13 @@ struct RemoteFood: Identifiable, Hashable {
         }
         if kcalPer100 > 0 {
             parts.append("每 100 克 \(Int(kcalPer100.rounded())) 千卡")
+            if let matched = matchedLocal {
+                // 说清楚是估的，别让人以为是菜谱作者给的精确值。
+                parts.append("按本地「\(matched)」估")
+            }
         } else {
-            // 下厨房的菜谱没有营养表，选完会用本地库同名菜的热量预填，仍可手动改。
-            parts.append("下厨房菜谱，选完按本地库估热量")
+            // 本地库也没对上，选完会提示自己填。
+            parts.append("没有营养表，选完自己填")
         }
         return parts.joined(separator: " · ")
     }
@@ -62,7 +68,9 @@ actor FoodSearchService {
 
     private let session: URLSession
     private let xiachufang = "https://www.xiachufang.com/search/"
-    private let openFoodFacts = "https://cn.openfoodfacts.org/cgi/search.pl"
+    /// 中国站实测长期 503（多轮复现），先试它是因为它中文条目多；挂了转世界站。
+    private let openFoodFactsCN = "https://cn.openfoodfacts.org/cgi/search.pl"
+    private let openFoodFactsWorld = "https://world.openfoodfacts.org/cgi/search.pl"
 
     init() {
         let configuration = URLSessionConfiguration.default
@@ -75,7 +83,9 @@ actor FoodSearchService {
 
     /// 两个源并行跑：下厨房快、Open Food Facts 慢还常挂，谁先回来都不该被另一个拖住。
     /// 两边都失败才抛错；只要有一边出结果，就正常返回。
-    func search(_ keyword: String, limit: Int = 25) async throws -> [RemoteFood] {
+    /// 一次多取一些，两个源各自都取这么多再合并去重，最后还会截回 limit。
+    /// 早先只取 25 条，下厨房一页就吃满了，用户反馈「东西太少」。
+    func search(_ keyword: String, limit: Int = 50) async throws -> [RemoteFood] {
         let trimmed = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else { return [] }
 
@@ -90,13 +100,41 @@ actor FoodSearchService {
             let key = food.name.lowercased()
             guard !seen.contains(key) else { continue }
             seen.insert(key)
-            merged.append(food)
+            // 下厨房只给菜名和图，这里就地拿本地库的数值补上，
+            // 否则列表里是一整排「0 千卡」，用户根本没法挑。
+            merged.append(Self.enrich(food))
         }
 
         if merged.isEmpty, localResult == nil, remoteResult == nil {
             throw FoodSearchError.offline
         }
-        return Array(merged.prefix(limit))
+
+        // 补到营养的排前面。下厨房一大半条目对不上本地库，混着放要翻很久。
+        let known = merged.filter { $0.hasNutrition }
+        let unknown = merged.filter { !$0.hasNutrition }
+        return Array((known + unknown).prefix(limit))
+    }
+
+    /// 给联网条目补营养值。
+    ///
+    /// 以前是等用户选中之后，在 `PickedFood(remote:)` 里才拿本地库兜底，
+    /// 于是搜索结果列表上仍然是一排 0，看着就像功能坏了。
+    /// 挪到这里，列表直接能看出热量；补不到才留空，由记一笔页面提示自己填。
+    nonisolated static func enrich(_ food: RemoteFood) -> RemoteFood {
+        guard !food.hasNutrition else { return food }
+        guard let local = FoodLibrary.bestMatch(food.name) else { return food }
+
+        return RemoteFood(
+            id: food.id,
+            name: food.name,
+            brand: food.brand,
+            imageURL: food.imageURL,
+            kcalPer100: local.kcalPer100g,
+            proteinPer100: local.proteinPer100g,
+            carbsPer100: local.carbsPer100g,
+            fatPer100: local.fatPer100g,
+            matchedLocal: local.name
+        )
     }
 
     // MARK: - 下厨房
@@ -173,7 +211,8 @@ actor FoodSearchService {
                     kcalPer100: 0,
                     proteinPer100: 0,
                     carbsPer100: 0,
-                    fatPer100: 0
+                    fatPer100: 0,
+                    matchedLocal: nil
                 )
             )
             if result.count >= limit { break }
@@ -208,7 +247,19 @@ actor FoodSearchService {
     // MARK: - Open Food Facts（备源）
 
     private func searchOpenFoodFacts(_ keyword: String, limit: Int) async throws -> [RemoteFood] {
-        var components = URLComponents(string: openFoodFacts)
+        var lastError: Error?
+        for base in [openFoodFactsCN, openFoodFactsWorld] {
+            do {
+                return try await searchOpenFoodFacts(keyword, base: base, limit: limit)
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? FoodSearchError.offline
+    }
+
+    private func searchOpenFoodFacts(_ keyword: String, base: String, limit: Int) async throws -> [RemoteFood] {
+        var components = URLComponents(string: base)
         components?.queryItems = [
             URLQueryItem(name: "search_terms", value: keyword),
             URLQueryItem(name: "search_simple", value: "1"),
@@ -266,7 +317,8 @@ actor FoodSearchService {
                 kcalPer100: number(nutriments["energy-kcal_100g"]),
                 proteinPer100: number(nutriments["proteins_100g"]),
                 carbsPer100: number(nutriments["carbohydrates_100g"]),
-                fatPer100: number(nutriments["fat_100g"])
+                fatPer100: number(nutriments["fat_100g"]),
+                matchedLocal: nil
             )
 
             // 同一条码或同名去重，Open Food Facts 里重复条目不少。
