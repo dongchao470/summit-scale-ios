@@ -215,7 +215,7 @@ struct TodayView: View {
                     .frame(maxWidth: .infinity, minHeight: Theme.minTouch)
                     .background(Theme.accent)
                     .foregroundColor(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
             }
         }
         .card()
@@ -296,6 +296,13 @@ struct TodayView: View {
     }
 
     @ViewBuilder
+    /// 列表缩进两档，全 App 只此一处定义。
+    ///
+    /// 一级 26：单独添加的条目，与餐次标题的文字左边缘对齐。
+    /// 二级 46：套餐展开的明细，与套餐名的文字左边缘对齐（图标 36 + 间距 10）。
+    private static let singleIndent: CGFloat = 26
+    private static let groupIndent: CGFloat = 46
+
     private func mealSection(_ meal: MealType) -> some View {
         let entries = todayFoods.filter { $0.mealValue == meal }
         let kcal = entries.reduce(0) { $0 + $1.kcal }
@@ -350,7 +357,7 @@ struct TodayView: View {
             } else {
                 let split = splitByTemplate(entries)
                 ForEach(split.singles) { entry in
-                    foodRow(entry)
+                    foodRow(entry, indent: Self.singleIndent)
                 }
                 ForEach(split.groups) { group in
                     templateGroupRow(group)
@@ -431,7 +438,7 @@ struct TodayView: View {
                     .font(.footnote.weight(.semibold))
                     .foregroundColor(Theme.accent)
                     .frame(width: 36, height: 36)
-                    .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -460,8 +467,9 @@ struct TodayView: View {
 
             if expanded {
                 ForEach(group.entries) { entry in
-                    foodRow(entry)
-                        .padding(.leading, 22)
+                    // 二级缩进：让明细的图标与上面套餐名的文字左边缘对齐，
+                    // 而不是在 foodRow 内部缩进之外再叠一层、越缩越歪。
+                    foodRow(entry, indent: Self.groupIndent)
                 }
             }
         }
@@ -475,7 +483,11 @@ struct TodayView: View {
         }
     }
 
-    private func foodRow(_ entry: FoodEntry) -> some View {
+    /// 缩进由调用方传入。
+    ///
+    /// 旧版把 26 写死在 foodRow 内部，套餐明细外面又叠一层 22，两个层级永远错位：
+    /// 单独加的食物缩进 26，套餐展开的明细缩进 48，图标与文字都对不上。
+    private func foodRow(_ entry: FoodEntry, indent: CGFloat) -> some View {
         HStack(spacing: 10) {
             FoodThumb(
                 // FoodEntry 只有一个图片字段：联网条目存 http 地址，
@@ -517,7 +529,7 @@ struct TodayView: View {
             }
             .accessibilityLabel("\(entry.name) 的更多操作")
         }
-        .padding(.leading, 26)
+        .padding(.leading, indent)
     }
 
     // MARK: - 运动卡

@@ -23,14 +23,6 @@ enum QuickAction: String, Identifiable, CaseIterable {
         case .weight: return "scalemass"
         }
     }
-
-    var tint: Color {
-        switch self {
-        case .food: return Theme.accent
-        case .activity: return Theme.success
-        case .weight: return Theme.fat
-        }
-    }
 }
 
 /// 三个主页面 + 一个全局加号。
@@ -170,7 +162,8 @@ struct RootTabView: View {
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundColor(.white)
                                 .frame(width: Theme.minTouch, height: Theme.minTouch)
-                                .background(action.tint, in: Circle())
+                                // 三个入口统一用主色，靠图标本身区分；旧版三色同屏太吵。
+                                .background(Theme.accent, in: Circle())
                         }
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel(action.title)
@@ -188,15 +181,10 @@ struct RootTabView: View {
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundColor(.white)
                     .frame(width: 56, height: 56)
-                    .background(
-                        LinearGradient(
-                            colors: [Theme.accent, Theme.accent.opacity(0.8)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: Circle()
-                    )
-                    .shadow(color: Theme.accent.opacity(0.35), radius: 10, y: 5)
+                    // 纯色足够：iOS 的悬浮按钮靠尺寸和位置立起来，不靠渐变与主色发光。
+                    // 旧版深色模式下那圈 accent 阴影会糊成一片脏边。
+                    .background(Theme.accent, in: Circle())
+                    .shadow(color: .black.opacity(0.16), radius: 8, y: 4)
             }
             .accessibilityLabel(isMenuOpen ? "收起快捷记录" : "打开快捷记录")
         }

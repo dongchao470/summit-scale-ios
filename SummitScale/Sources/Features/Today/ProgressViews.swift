@@ -35,7 +35,7 @@ struct StatTile: View {
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
         .background(Color(uiColor: .tertiarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title) \(value) \(unit)")
     }
@@ -75,7 +75,7 @@ struct MacroBar: View {
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(color.opacity(0.18))
+                        .fill(Theme.track)
                     Capsule()
                         .fill(isOver ? Theme.warning : color)
                         .frame(width: max(0, geometry.size.width * progress))
@@ -142,22 +142,12 @@ struct GoalProgressBar: View {
 
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
+                    // 轨道走系统填充灰，只有进度本身带色，这是 iOS 进度条的标准画法。
                     Capsule()
-                        .fill(Theme.accent.opacity(0.16))
+                        .fill(Theme.track)
                     Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [Theme.accent.opacity(0.75), Theme.accent],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: max(0, geometry.size.width * progress))
-                    // 起点与终点标注，让进度有个参照。
-                    Circle()
                         .fill(Theme.accent)
-                        .frame(width: 8, height: 8)
-                        .offset(x: max(0, geometry.size.width * progress) - 4)
+                        .frame(width: max(0, geometry.size.width * progress))
                 }
             }
             .frame(height: 8)

@@ -166,10 +166,10 @@ struct FoodThumb: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .stroke(Color(uiColor: .separator).opacity(0.45), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous)
+                .stroke(Theme.separator.opacity(0.45), lineWidth: 0.5)
         )
     }
 

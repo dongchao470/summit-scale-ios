@@ -265,3 +265,58 @@ v0.3.3 删掉重名条目 `latte` 后把它的图改挂过去时撞出来的）�
    改成 `FoodLibrary.bestMatch(entry.name)?.category ?? ""` 按名字反查。
 2. XcodeGen 生成的 Info.plist 与 `project.yml` 里的版本号是两处，改版本必须同时改，
    否则产出的 IPA 名字还是旧版本（v0.3.3 时已经踩过一次）。
+
+---
+
+## v0.3.4 / v0.3.5 真机闪退与 v0.3.6 的修法
+
+**现象**：v0.3.4 build 7 与 v0.3.5 build 8 装上后，**一进饮食库就闪退**，别的页面正常。
+
+**崩溃取证**（设备 `/var/mobile/Library/Logs/CrashReporter/`，需在宿主侧读，iSH 里访问不到）：
+- `SummitScale-2026-10-11-184907.ips`：`EXC_BREAKPOINT` / `SIGTRAP`，termination code 5
+  （`Trace/BPT trap: 5`），faultingThread 0。
+- 栈：`FoodItem.imageURL.getter` → `one-time initialization function for map` →
+  `dictionaryLiteral` → `symbolLocation: 244`。
+
+**排查过程**：
+1. 疑似重复 key。源码 434 条逐项去重检查：零重复；宽松模式（忽略空白/大小写）也零重复；
+   无含非 ASCII 的 key；无需要 NFC 归一化的 key；方括号配平。**排除**。
+2. 写 `tools/repro_dictionary_trap.swift`，把同一批 434 个 id 分别用
+   「434 项 `[String: String]` 字面量」（写法 A）和「字符串常量 + `Set` 切分」（写法 B）构造
+   并比对，挂进 CI 作非阻断步骤跑。结果：**A、B 都 OK，各得 434 项**。
+   即「字面量构造」本身不会 trap，**推翻了重复 key 与字面量构造这两个假设**。
+3. 直接反汇编 build 8 的二进制找答案（纯 Python 解 Mach-O，iSH 里没有 llvm-objdump）：
+   - `FoodImages.map` 的一次性初始化函数 `…map…_WZ` 在 `0x10001fc50`；
+   - 它 `+40` 处 `bl` 到 `_$sSD17dictionaryLiteral…CSS_SSTt0g5Tf4g_n`（`0x10003680c`），
+     就是那句字典字面量；
+   - 该特化函数内部**内联了两个 `BRK #1`**（`+244`、`+248`，`d4200020`），
+     其中 `+248` 由 `+180` 的 `b.hs` 跳入，是 `count + 1` 无符号溢出检查。
+   - 与崩溃日志的 `symbolLocation: 244` 对上。**结论：tr​ap 是编译器内联进
+     `dictionaryLiteral` 的断言，而不是数据重复**；数据侧无重复已证实，所以这条路径
+     在数据层面修不掉。
+
+**v0.3.6 的修法**：不赌写法，直接把整个崩溃点删掉。
+- `FoodImages` 由「434 项 map + `assetName(for:)`」改成**纯函数**：
+  `static func assetName(for id: String) -> String { "food_" + id }`。
+  有没有图交给 `UIImage(named:)` 返回 nil 判断，列表退回分类 SF Symbol。
+  类型不再持有任何静态存储，没有一次性初始化，也就没有那句 `dictionaryLiteral`。
+- `FoodCategorySymbol` 的 15 项 `[String: String]` 一并改成 `switch`。15 项大概率无事，
+  但它和崩掉的那张表是同一种写法、同一条标准库路径，没有理由留着。
+  分类名与 `FoodLibrary.categoryOrder` 的 15 类逐一核对，映射不变。
+- `tools/verify_images.py` 重写成回归守卫：`FoodImages.swift` 里一旦出现 `static let` /
+  `static var` 就直接报错，另外逐个 imageset 校验 jpg、`Contents.json` 与 `food_<id>` 命名。
+
+**产物核对（build 9 与 build 10 都做过）**：
+- 用 Python 反查 `SummitScale.app/SummitScale` 的字节：**`FoodImages` 字样出现 0 次**
+  —— 该类型已被完全内联消除，配图表的初始化函数连同它的 `dictionaryLiteral` 调用一起消失。
+- `dictionaryLiteral` 出现次数：build 9 为 5，build 10 为 4（分类表那处也消了）；
+  剩余是运行库/其它泛型特化，不在崩溃路径上。
+- `Assets.car` 两次都是 6 074 168 字节（6.07 MB），434 张图完好，没有因为删表而丢资源。
+
+**版本与流水线**：`project.yml` 里 `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION` 与
+Info.plist 的 `CFBundleShortVersionString` / `CFBundleVersion` 是**两处**，改版本必须同时改，
+否则 IPA 文件名还是旧版本（v0.3.3 踩过一次）。
+
+**未做真机验证** —— build 9 未交付，build 10 已交付待用户安装确认：
+饮食库能进、有图条目显示图片、无图条目显示分类图标而不是留白。
+若仍崩，需取新 `.ips` 再定位（重点看是否还落在 `dictionaryLiteral`，若否说明根因另有其处）。
