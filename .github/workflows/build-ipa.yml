@@ -46,6 +46,12 @@ jobs:
           python3 tools/verify_autofill.py
           python3 tools/verify_images.py
 
+      # 只作诊断，故意不拦构建：先看清 434 项字典字面量在这套运行库上到底炸不炸。
+      # 日志里看 "A 字典字面量" 那行的结果。
+      - name: Diagnose dictionary literal (non-blocking)
+        continue-on-error: true
+        run: swift tools/repro_dictionary_trap.swift
+
       - name: Generate project
         run: xcodegen generate --spec project.yml
 

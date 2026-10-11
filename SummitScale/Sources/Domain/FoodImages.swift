@@ -2,456 +2,103 @@ import Foundation
 
 /// 本地食物库的配图索引。
 ///
-/// 图片来源是下厨房搜索页，按食物名匹配；匹配不上的（成分表那批食材、中式成菜）不配图，
-/// 界面按分类退回 SF Symbol 图标。
+/// 图片来自下厨房搜索页，按食物名匹配；匹配不上的条目（成分表那批食材、中式成菜）
+/// 没有配图，界面按分类退回 SF Symbol 图标。
 ///
-/// 0.3.4 起这些图已经压到 256×256 打包进 Assets 的 FoodImages 组，断网也有图。
-/// 下面 map 里留的地址只作来源记录，程序不再拿它取图；判断某个 id 有没有配图，
-/// 用 assetName(for:)。
+/// 0.3.5 起这 434 张图已经压到 256×256 打包进 Assets 的 FoodImages 组，断网也有图，
+/// 下面这段 id 只用来判断「这个食物有没有配图」。
+///
+/// 这里刻意写成一段空白分隔的 id 常量再切分，而不是 [String: String] 或 Set 字面量：
+/// 大块的字面量每个元素都是一次运行期构造，会走标准库的 dictionaryLiteral 并对重复
+/// key 做 precondition，元素一多就有在真机上直接 trap 的风险。0.3.4 build 7 和
+/// 0.3.5 build 8 两次崩溃的栈帧都停在 FoodImages 的一次性初始化上，就是踩了这个。
+/// 改成字符串常量后，切分与建集合都是普通代码路径，没有断言可踩。
 enum FoodImages {
-    /// 食物 id -> 原图来源地址（仅记录，不再用于加载）。
-    private static let map: [String: String] = [
-        "almond": "https://i2.chuimg.com/0a0fdd0bb8cc4798ad9eb118740c79e9_3414w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "americano": "https://i2.chuimg.com/99f59fa767ab487e80025bf1ef1ad5ba_4032w_3024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "ants_tree": "https://i2.chuimg.com/7ea02eee3d4744c6b97563f3e907c3f2_3072w_2304h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "apple": "https://i2.chuimg.com/0e936f088a1a4f12a4f06dfe1f4d8548_912w_684h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "asparagus": "https://i2.chuimg.com/4758f7938e464a5ca7a09435d4a84597_951w_951h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "avocado": "https://i2.chuimg.com/c4b606d14a8046dd840257678883ce11_2583w_2559h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "baby_cabbage": "https://i2.chuimg.com/c954840590fd4338b19a639a0fb0c2d8_3024w_4030h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "bacon": "https://i2.chuimg.com/dcc14803bbdc4bc3b094c1a02899252e_689w_742h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "baijiu": "https://i2.chuimg.com/9797f794a3c4421895ffd165380a31a2_3446w_2584h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "banana": "https://i2.chuimg.com/1b5262d74cb9435ab673aee481422e69_1921w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "baozi": "https://i2.chuimg.com/af00bef73653414c969e767bf022d23c_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "bass": "https://i2.chuimg.com/915d38c577054489bbdf72f9dd563421_960w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "beef_jerky": "https://i2.chuimg.com/ae67f0db225b461fb5537d10ae59ae8f_3414w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "beef_lean": "https://i2.chuimg.com/a91dbcf6814248e9a1184e2dd2f65e85_2101w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "beef_noodle": "https://i2.chuimg.com/d70fb7ead8b644b28dcf2cbae1db5a62_1080w_810h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "beef_roll": "https://i2.chuimg.com/fd151acc0045493f98a378eddc68e1c9_1125w_759h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "beer": "https://i2.chuimg.com/cbe2fa109ade42749a57043f4e67ddde_912w_684h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "bibimbap": "https://i2.chuimg.com/3b36546b42314298a1ad92d905901211_1920w_1440h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "bitter_melon": "https://i2.chuimg.com/e2bf9a11a55b4529b789c187b363eb50_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "blueberry": "https://i2.chuimg.com/e927b3fa27154e12af69b451a4b310d8_756w_1008h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "boiled_chicken": "https://i2.chuimg.com/3e27599c9040446c81e5f67d52cc8a48_749w_994h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "boiled_pork_slices": "https://i2.chuimg.com/f7fd9808106444448131f6d1361dc0c4_1242w_2688h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "borscht": "https://i2.chuimg.com/18fed27e190a47bd89fdc98a1da82c12_2312w_1734h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "braised_chicken_rice": "https://i2.chuimg.com/c3e14680898111e6a9a10242ac110002_3696w_2448h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "braised_eggplant": "https://i2.chuimg.com/595c4530a9864e3e8cfe8d6b0558f066_1080w_810h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "braised_hairtail": "https://i2.chuimg.com/8823e14ef9ff470095f01cb000343128_1124w_1500h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "braised_pork": "https://i2.chuimg.com/3e7926d6db234fd5927cb1f2770acb65_2720w_4080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "braised_ribs": "https://i2.chuimg.com/12f584793b2e4b4fb123b16e26fcab9f_1002w_2160h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "bread_toast": "https://i2.chuimg.com/80c48313b889425b953fc5902eefb2a2_1000w_750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "bread_whole": "https://i2.chuimg.com/edadcfacea354923991f4b68e139173f_1598w_1116h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "brisket": "https://i2.chuimg.com/665a851db5f9468ba2a8ab54b862bb8e_2208w_1242h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "broccoli": "https://i2.chuimg.com/2789fd4b71484ceca9f606a099a811fc_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "burger": "https://i2.chuimg.com/46b9bbc788f246a38bfc5caca2704223_1280w_1707h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "butter": "https://i2.chuimg.com/da622279b1db412ba6884e65a8362ddc_2560w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cabbage": "https://i2.chuimg.com/1fef281af897402a959371e20da3b812_3024w_3675h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "carrot": "https://i2.chuimg.com/8fdeb0526df54781b0ebdf5ef8ceef59_960w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cashew": "https://i2.chuimg.com/b88db08ce063427e92a78eb1ecfa0ec8_750w_1000h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "celery_pork": "https://i2.chuimg.com/49adde4cdafd4913b6204a464dd33f15_750w_750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "century_egg_congee": "https://i2.chuimg.com/ecb4b5d04e5241d9b535bef5bda18b6f_1170w_1170h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_americano": "https://i2.chuimg.com/9a3b46333ad243f9acd0c3c0b8e5faf2_1703w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_cappuccino": "https://i2.chuimg.com/820fe204872c11e6b87c0242ac110003_400w_541h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_caramel_macchiato": "https://i2.chuimg.com/cc82531a879211e6b87c0242ac110003_2464w_1632h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_cheese_foam_tea": "https://i2.chuimg.com/8f74ac52f0c411e6bc9d0242ac110002_1280w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_coconut_latte": "https://i2.chuimg.com/e5dcf660b7874701b6c8cc4c71d8a80b_1241w_1862h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_fruit_tea": "https://i2.chuimg.com/76f40ec549334123933eec15bebe023d_1440w_1920h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_hot_cocoa": "https://i2.chuimg.com/8cf284e0e1384572876c68000c2642f9_1367w_1024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_latte": "https://i2.chuimg.com/e5dcf660b7874701b6c8cc4c71d8a80b_1241w_1862h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_lemon_tea": "https://i2.chuimg.com/9927510f1c534f15bd4a92111409e487_960w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_mango_pomelo": "https://i2.chuimg.com/85f3f078a14549b491f3b36558d4aece_1242w_994h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_matcha_latte": "https://i2.chuimg.com/8b166dd93b95497d9ce6c84b4430b67c_1620w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_milk_coffee": "https://i2.chuimg.com/b7e0c9ab0ce843c0ac5ed9e538245948_480w_384h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_milk_tea": "https://i2.chuimg.com/4c8bda4b0851437298c2abcf4ba38fd6_3024w_2420h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_mocha": "https://i2.chuimg.com/e1bfcdffbb6b4d9faede7fd7ff0b6628_828w_1362h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_oat_latte": "https://i2.chuimg.com/fdaf38b789af419ea0b13b46b0fe97bc_1445w_1084h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cf_taro_boba": "https://i2.chuimg.com/d93e2fd9036e472a98ffb48487f931eb_1920w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "changfen": "https://i2.chuimg.com/74d0410971e64cefb447b6650f5a0be1_1031w_642h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cheese": "https://i2.chuimg.com/205e0eadab8c41ddb5da406ee8ab5af7_2000w_2666h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cherry": "https://i2.chuimg.com/a1717f588b1f11e6a9a10242ac110002_1080w_1440h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cherry_tomato": "https://i2.chuimg.com/2acd17bb2c894fcea2391af757818e32_1200w_799h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "chicken_breast": "https://i2.chuimg.com/0a4eb5b689ab11e6b87c0242ac110003_1600w_2407h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "chicken_leg": "https://i2.chuimg.com/6d20fcbee0d54677a634e0c80560a45b_1027w_822h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "chicken_nugget": "https://i2.chuimg.com/5a08b3f9149b41dfa27dcca5d0ac6205_3368w_2695h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "chicken_pot": "https://i2.chuimg.com/e062173d36114722b11d8e3386751a85_1080w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "chicken_soup": "https://i2.chuimg.com/16990e5627e648b8a36c66ddbc416b88_750w_750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "chicken_wing": "https://i2.chuimg.com/36ce5c0bc6c0454caec5ce2cdb52fb90_1280w_1024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "chips": "https://i2.chuimg.com/1c3004f4581f11e7bc9d0242ac110002_640w_664h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "clam": "https://i2.chuimg.com/1194c715a8a74b56966590b3a5383178_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cola": "https://i2.chuimg.com/e0595ac84e48476790b035a62070f0b6_737w_737h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cola_wings": "https://i2.chuimg.com/86d43f14f05a11e6947d0242ac110002_1280w_856h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cola_zero": "https://i2.chuimg.com/e6a73cead9d84ba59e88dc3fbc28256b_1280w_960h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cold_cucumber": "https://i2.chuimg.com/104202f693bf4ed993a6279fba0b1c46_3024w_4030h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cold_fungus": "https://i2.chuimg.com/a5147501c9e94a298bd326a0a94a58e3_1080w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "congee": "https://i2.chuimg.com/fb61ae2887f711e6a9a10242ac110002_3648w_2056h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "corn": "https://i2.chuimg.com/a51df01ef4554b5586fd49954fbf8a6f_1128w_1128h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "corn_ribs": "https://i2.chuimg.com/c32e6335ab904475a0c141e08586361a_3024w_4032h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "crab": "https://i2.chuimg.com/adb87bc067774fcc897ff67cb6f700d6_3666w_2899h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "cream_cake": "https://i2.chuimg.com/ecfe86844ee44e7db51a057fbdb3d55c_960w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "curry_chicken": "https://i2.chuimg.com/72931f36878011e6a9a10242ac110002_800w_600h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "curry_rice": "https://i2.chuimg.com/93b62d02874e11e6a9a10242ac110002_798w_490h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_americano_iced": "https://i2.chuimg.com/11f5adc8528443728cc7f46d51c07e7c_5184w_3456h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_beef_ball_soup": "https://i2.chuimg.com/c3b8936ec2ee42508c71a7e43e88eb48_1008w_756h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_beef_chow_fun": "https://i2.chuimg.com/136191e8de4f11e6bc9d0242ac110002_1280w_852h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_beef_rice": "https://i2.chuimg.com/083c89ae946c4fb6a12c1685716fa7eb_960w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_beef_tendon": "https://i2.chuimg.com/9cb91fa4898d11e6b87c0242ac110003_1536w_2048h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_big_plate_chicken": "https://i2.chuimg.com/99a3111f8401437aa2a14b2ea589b2b9_1656w_1242h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_black_bean": "https://i2.chuimg.com/bba7e7331f9d4989a9f2bd30abb9e85d_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_blanched_shrimp": "https://i2.chuimg.com/41176deaa67b4470b6ba1da515295d9f_750w_1000h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_braised_noodles_bean": "https://i2.chuimg.com/20caa28acb664a0ca6354886906f7ace_3480w_2784h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_braised_pork_rice": "https://i2.chuimg.com/54508e2119314cb9bfe967a6e0697d7d_1242w_1242h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_braised_sea_cucumber": "https://i2.chuimg.com/4f6660f288db11e6a9a10242ac110002_1000w_1500h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_brown_sugar_milk_tea": "https://i2.chuimg.com/5ddfeff5c12e4d87bddde2a53fef9973_1997w_1498h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_butter_cookie": "https://i2.chuimg.com/ee349457cccb4fd1b57dc641219da3bb_1242w_1242h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_caesar_salad": "https://i2.chuimg.com/0efc969e8aa711e6b87c0242ac110003_700w_333h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_cauliflower": "https://i2.chuimg.com/21f2874e891311e6a9a10242ac110002_430w_323h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_celery": "https://i2.chuimg.com/24eadc5439864ecbabd0e10532fc4a1b_912w_684h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_char_siu": "https://i2.chuimg.com/896aec0452e24f088005d4d643bc8912_687w_690h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_cheese_grape_tea": "https://i2.chuimg.com/7dfcb67d75f448aab5191b688327071c_1280w_1706h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_cheese_slice": "https://i2.chuimg.com/049aabfc3edc4130a0929dfcfe6e1d80_704w_938h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_cheese_stick": "https://i2.chuimg.com/f93eae63c3d24081b062dbe07a584402_1280w_1023h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_chestnut": "https://i2.chuimg.com/731ac4584d044312b8e581e8b2bbe8c0_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_chicken_feet": "https://i2.chuimg.com/d666f525831f474c9854d0325f1ae328_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_chicken_popcorn": "https://i2.chuimg.com/500329c4d994434990064e0d9102f917_333w_246h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_chicken_salad": "https://i2.chuimg.com/899bec18cbd74118aa589c3b09b28a5e_750w_892h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_chicken_wrap": "https://i2.chuimg.com/f71a1876d0064f84ba0e3d4b7c092fad_3024w_3024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_chickpea": "https://i2.chuimg.com/c83bc7fe872f11e6a9a10242ac110002_490w_325h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_chili_oil": "https://i2.chuimg.com/f79f086aa7044c81bf0feb4cd90848b2_3024w_4032h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_chocolate_milk": "https://i2.chuimg.com/19d8c2899ffe474e92b6c374c0a19f0d_590w_600h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_chopped_pepper_fish_head": "https://i2.chuimg.com/8c1b23ba873311e6b87c0242ac110003_450w_624h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_claypot_rice": "https://i2.chuimg.com/2f7a2350a06d461295e07e81db5e2a46_1501w_1201h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_coconut_meat": "https://i2.chuimg.com/87d0f0dcb9d5457cbac8ad90bc04f696_3072w_2304h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_coconut_water": "https://i2.chuimg.com/09d5596a5438483b9b441598eea9ecdd_2732w_2184h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_condensed_milk": "https://i2.chuimg.com/1b59ea2a1ebd4d8dbe1c2c3498c2fc5c_1706w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_cookie_chocolate": "https://i2.chuimg.com/9ced0925b84740f0830c277ed3260cc7_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_cream": "https://i2.chuimg.com/4e5c77e2079b4750827fdc1cfed20911_2250w_1500h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_dongpo_pork": "https://i2.chuimg.com/a0abb8b3c2874da1bf7dae7328773631_450w_678h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_double_burger": "https://i2.chuimg.com/5d1b6eaa897a11e6a9a10242ac110002_4160w_3120h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_dried_beancurd_snack": "https://i2.chuimg.com/d0eea70f753e45618179ecafad058168_1152w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_durian": "https://i2.chuimg.com/662ce02a8ad611e6b87c0242ac110003_1536w_2048h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_edamame": "https://i2.chuimg.com/474cf7fdebca4388abc5963ed76a61ca_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_egg_pancake": "https://i2.chuimg.com/87fc0c9247a34f9aaa58b88b6ea62dc3_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_egg_roll": "https://i2.chuimg.com/7313951488b411e6a9a10242ac110002_1619w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_fish_fragrant_eggplant": "https://i2.chuimg.com/51c3f4edf9154b7f8093614d12babcc5_1536w_2046h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_fish_tofu": "https://i2.chuimg.com/5e03e3cda85b44afba895ce6e78f0ada_1280w_1551h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_flat_white": "https://i2.chuimg.com/1e157679280e412480e74d86d208db56_2806w_2103h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_fresh_soy_milk": "https://i2.chuimg.com/84cc079a5da5449fa1e55d3bc0507901_1500w_1500h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_fried_chicken_thigh": "https://i2.chuimg.com/415c3070e33f4d1f8d24d6e452bdb2f4_750w_1000h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_fried_chicken_wing": "https://i2.chuimg.com/157020b75be54732bfb91aa936c6ad31_2160w_2160h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_fujian_wonton": "https://i2.chuimg.com/2a17b3e3a3a04eb8b4c95b8b7bd0e721_4032w_3018h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_geda_soup": "https://i2.chuimg.com/ae4bdf52895311e6b87c0242ac110003_746w_750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_glutinous_cake": "https://i2.chuimg.com/319c680c889811e6b87c0242ac110003_640w_640h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_glutinous_rice_roll": "https://i2.chuimg.com/a7cc3fc603b2481e9906ba5421127876_1124w_1500h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_goose_meat": "https://i2.chuimg.com/5d3c34c077cc4d33a8cade4be5ee08ee_744w_744h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_grape_purple": "https://i2.chuimg.com/acfa06b9e2f94942be895697c2f4dbb4_1280w_1608h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_guilin_rice_noodle": "https://i2.chuimg.com/34ee80ee879911e6b87c0242ac110003_2048w_1529h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_gummy": "https://i2.chuimg.com/507b0e7962f44aa0a57dcea51d243034_1022w_750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_guobaorou": "https://i2.chuimg.com/14c5b8b2a1dc4c438ba0854e8dd9fe56_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_hand_grabbed_lamb": "https://i2.chuimg.com/52b8af6de39e4e6cafd74b4f9ec00321_4096w_2731h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_hazelnut": "https://i2.chuimg.com/5df8859889a611e6a9a10242ac110002_1280w_960h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_hot_dry_noodles": "https://i2.chuimg.com/384cea20083846e28d8a3d35dda4d9a7_1280w_960h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_hotdog": "https://i2.chuimg.com/9a3b46333ad243f9acd0c3c0b8e5faf2_1703w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_hp_crispy_pork": "https://i2.chuimg.com/f03960b8f448404c987567d0bd2120b2_768w_1024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_hp_duck_blood": "https://i2.chuimg.com/099ea67f75004ebb879668d0501d874e_826w_828h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_hp_thousand_tripe": "https://i2.chuimg.com/436f2572cc324dc3b20746cdc0b3b744_720w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_hulatang": "https://i2.chuimg.com/a1e57850d0ac4e5d81f621e34c247c03_768w_684h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_ice_cream_cone": "https://i2.chuimg.com/bb46a0525a8a44e3b73cbe643e6c7cb2_1280w_854h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_konjac_snack": "https://i2.chuimg.com/75c983a1d5044d0aa0619da455b90b0b_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_lamb_chop": "https://i2.chuimg.com/ce0ed2c86ff747cc894bd1902e3d35af_750w_1000h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_lanzhou_noodles": "https://i2.chuimg.com/35ec427c79ef4a9ba3927932ec7c8d31_768w_1024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_liangfen": "https://i2.chuimg.com/a2af5704970441fab4b3f925f2277adf_1080w_1440h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_loofah": "https://i2.chuimg.com/618ed4d12337488b858cd454c735c86b_2560w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_mapo_rice": "https://i2.chuimg.com/8a6c2964788948e1b20732d4cdaf0689_3024w_4032h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_marshmallow": "https://i2.chuimg.com/f1386b12890511e6a9a10242ac110002_800w_533h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_milk_candy": "https://i2.chuimg.com/81d1555b8a574d9499d93d208dfb6562_763w_593h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_milk_oatmeal": "https://i2.chuimg.com/322524e08b7111e6a9a10242ac110002_1560w_2080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_northeast_stew": "https://i2.chuimg.com/cab850ca0ee44f1e8c9ef4a3656c2828_3952w_2964h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_onion_ring": "https://i2.chuimg.com/b033ac3235834f4dba53d71099495b89_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_oolong_tea": "https://i2.chuimg.com/cce0b6ee2a154ba7a4c7ccaae7c4a7a2_2667w_2002h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_papaya": "https://i2.chuimg.com/dee658a66b284c15acacbd0678a2f604_1279w_1706h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pea_shoot": "https://i2.chuimg.com/40afd19e1e9c4025bed77da055453a2c_1221w_1418h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pear_juice": "https://i2.chuimg.com/3bf31bf8ed54469c83e87c7131ceddad_1440w_1440h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pepper_pork_liver": "https://i2.chuimg.com/c005d3dec7f440a7a3c263fc29381219_750w_521h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_persimmon": "https://i2.chuimg.com/fcc0283c8745412684006b09b5d8a0f4_750w_803h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pigeon": "https://i2.chuimg.com/098d702a07ea4a0eb6aa9867a6abcbd4_912w_684h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pine_nut": "https://i2.chuimg.com/7bc60d5e35e04dd3b7de82a059ccdc96_768w_1024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_plum": "https://i2.chuimg.com/8e7d7722b8a3440192ae3579e25f73eb_3024w_4032h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_popsicle_fruit": "https://i2.chuimg.com/79dcf8e8891a11e6a9a10242ac110002_1239w_1242h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pork_bun": "https://i2.chuimg.com/1125d32c5047402d9a0ef2b03e8fdeed_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pork_chop_rice": "https://i2.chuimg.com/1636256bee5443778950757220dc61d4_1536w_2046h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pork_ear": "https://i2.chuimg.com/52fff06090c74070a2482989f1258f97_828w_662h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pork_heart": "https://i2.chuimg.com/3774e8c594b245bd8088ef34d411059d_750w_1125h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pork_jerky": "https://i2.chuimg.com/c9b5fcb6308b4c069a7a03b217fff056_1080w_955h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pork_liver": "https://i2.chuimg.com/c251bf922b0311e7bc9d0242ac110002_1944w_2576h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_potato_salad": "https://i2.chuimg.com/ce12bef33a784034a31edf42a62a1203_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_potato_stew_beef": "https://i2.chuimg.com/9c636bbe885111e6b87c0242ac110003_650w_650h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_potato_vermicelli": "https://i2.chuimg.com/fc7102fba5ad4129a2779d2bc473af92_3998w_2999h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_pumpkin_bun": "https://i2.chuimg.com/4c5eeb79d4bf4733a689d7a0aeb5da9a_1656w_1242h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_quail_egg": "https://i2.chuimg.com/e704f9e0894511e6b87c0242ac110003_736w_700h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_radish_rib_soup": "https://i2.chuimg.com/42be9cbc873b11e6b87c0242ac110003_600w_450h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_rice_ball": "https://i2.chuimg.com/527fc8ec87b94c89bf0b0e900fd3428c_1224w_1632h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_rice_cake_soup": "https://i2.chuimg.com/64aefa0ec3b142b4a86508c5d1262e51_7952w_5304h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_rice_cracker": "https://i2.chuimg.com/09c44f8fc9b249acb496edd48e492025_1280w_1706h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_roast_duck": "https://i2.chuimg.com/8b0b8348e0ce4997878b9e3f6f750058_1656w_1242h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_salt_baked_chicken": "https://i2.chuimg.com/2d4a731ce3554aba84ce653ec539b1f5_1152w_921h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_salted_duck": "https://i2.chuimg.com/827b877cf13f416d88789f6a26a4453a_3024w_4032h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_salted_milk_tea": "https://i2.chuimg.com/4910a4ae89dc11e6b87c0242ac110003_638w_640h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_sandwich_egg": "https://i2.chuimg.com/8faa518881d6456e920f1ca8e85cc920_2160w_2160h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_sauerkraut_fish": "https://i2.chuimg.com/ef0ed2ce081a11e7947d0242ac110002_2304w_1728h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_scallion_oil_noodles": "https://i2.chuimg.com/551a47e4a48146ff860d2c834a8bca3c_960w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_seaweed_cracker": "https://i2.chuimg.com/544f61c411a14b0aa49f1f93f3468de0_1600w_900h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_seaweed_roll": "https://i2.chuimg.com/bfeec6b4ba6d41fa9745824b5ff43e63_1368w_912h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_sesame_ball": "https://i2.chuimg.com/3c22978c1d1d11e7947d0242ac110002_1080w_1616h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_shaxian_noodles": "https://i2.chuimg.com/6966b9188a8049eab6a7cb2fafdf1f67_1226w_1438h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_shrimp_cracker": "https://i2.chuimg.com/f4038a9dcc42448690c4324a680ac390_1936w_1296h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_shuizhu_beef": "https://i2.chuimg.com/a039ed1f17cc4b5fadda1e6352be5b34_600w_386h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_soda_cracker_cream": "https://i2.chuimg.com/221e36a4a91f40bd9393c8ee8e1d21f6_934w_1246h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_soybean_trotter": "https://i2.chuimg.com/0773b563f5a041aea14a3b2c15df8b09_3024w_4032h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_sparkling_water": "https://i2.chuimg.com/bb21d8e0681649d081859e57b96c3d57_1280w_1706h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_spicy_chicken_burger": "https://i2.chuimg.com/9bd7ed8c894111e6b87c0242ac110003_4912w_3264h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_spicy_crayfish": "https://i2.chuimg.com/b7006b84876611e6b87c0242ac110003_3881w_2587h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_sports_water": "https://i2.chuimg.com/7a3e9bc24cb44c8ca7ef7a875d7e1eb0_1170w_654h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_sprite": "https://i2.chuimg.com/5f91953d99c84ccca3a2e69ae2d0c92d_2558w_1820h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_steamed_roll": "https://i2.chuimg.com/158e18246d3048ebbb305f676f420297_1920w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_stinky_tofu": "https://i2.chuimg.com/fbd11b9c1efb436fb5def51c781b393a_1242w_994h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_suan_cai_pork": "https://i2.chuimg.com/97132cd4d04440d29034df4097117403_750w_600h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_sweet_sour_fish": "https://i2.chuimg.com/2fda0d5f57dc4f0c86f95307ced61596_1000w_667h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_swiss_roll": "https://i2.chuimg.com/c380f7570fa445839a301d886b94adf7_1125w_2436h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_tea_egg": "https://i2.chuimg.com/b866ef7ec69b42fb83592063793d6ddb_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_tofu_pudding": "https://i2.chuimg.com/0f3014ebbd7a40b581ffeccdb5703931_1280w_1024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_tofu_skin_sheet": "https://i2.chuimg.com/35edea3dddd442e498165114044ecafd_1280w_1667h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_tomato_egg_rice": "https://i2.chuimg.com/7013158da3164a0396003462153aaba9_960w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_veggie_bun": "https://i2.chuimg.com/fa585425bc8c4a60ad025b0ac7ec6b76_2304w_3072h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_wafer": "https://i2.chuimg.com/b430a722d2ee4ade93f5e614ec43e69f_3016w_2648h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_westlake_fish": "https://i2.chuimg.com/e2f985c13b574327abd99b73a34e88d6_1920w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_wheat_noodle_soup": "https://i2.chuimg.com/12e385bfbfac4cb0b5a88c27aa5ed215_1242w_1656h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_whole_milk_powder": "https://i2.chuimg.com/eca9b8156d06439e9a5870a1da07321f_1280w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_wonton": "https://i2.chuimg.com/346d4702955949e790a97bff5b2f9af1_1125w_1499h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_wonton_noodles": "https://i2.chuimg.com/9771368c223a40959b8fa086bdd9940c_1280w_1706h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_xianggu_rice": "https://i2.chuimg.com/acaf2d4c870111e6b87c0242ac110003_450w_678h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_yam_rib_soup": "https://i2.chuimg.com/1045cdf109674553bfbc514bd1beba34_2048w_2048h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_yanduxian": "https://i2.chuimg.com/f94453f2016e11e7947d0242ac110002_853w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_yangrou_paomo": "https://i2.chuimg.com/f6dc7190873311e6b87c0242ac110003_450w_613h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_youmian_kao": "https://i2.chuimg.com/19456e11e45841d399ae0cf0be157fc3_1152w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_zhajiang_noodles": "https://i2.chuimg.com/763122848a1c11e6b87c0242ac110003_1536w_2048h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "dark_chocolate": "https://i2.chuimg.com/f16e52805e744ff7ab102a53215c2e29_744w_992h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "disanxian": "https://i2.chuimg.com/3000f6a757db47d9bb50191a6ebcb649_1280w_959h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "donut": "https://i2.chuimg.com/981d5ef3a9844c96a519b3acf50e1d0d_1616w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "doubanjiang": "https://i2.chuimg.com/c5f229b926f3431687fca529116ce384_1280w_1706h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "dragon_fruit": "https://i2.chuimg.com/a40bb14a71b04a22b22b03e7413495b5_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "dried_tofu": "https://i2.chuimg.com/d0eea70f753e45618179ecafad058168_1152w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "dry_beans": "https://i2.chuimg.com/d4e9f93752484dc4bd8fd6a25c07be10_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "dry_cauliflower": "https://i2.chuimg.com/8baa0cce97cf454f983c31ffa5fdf067_1280w_1570h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "dry_four_season": "https://i2.chuimg.com/f9c1e7373f354b8ebf4211795376963e_1058w_792h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "duck": "https://i2.chuimg.com/6dc907701be24da19c96cefe8bb19842_2160w_1726h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "duck_breast": "https://i2.chuimg.com/6ab2df4528994fff8a6939b5cebd3a5e_1280w_718h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "dumpling": "https://i2.chuimg.com/eadabba6885811e6b87c0242ac110003_650w_650h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "egg_boiled": "https://i2.chuimg.com/53ee2c6ae7664296883a64abe1bb02e1_943w_1209h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "egg_fried": "https://i2.chuimg.com/9b7b96eabaf74e78aab829e4314cd22b_3588w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "egg_fried_rice": "https://i2.chuimg.com/b8d27514f7914a92897a35b1dd034ee0_3414w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "egg_tart": "https://i2.chuimg.com/593deca69607464dbf42632d4c9b5855_1804w_1443h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "egg_white": "https://i2.chuimg.com/4f4d143487ba11e6b87c0242ac110003_800w_533h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "eggplant": "https://i2.chuimg.com/9e13c8ae10d145a3b1aa1d153c0e6d71_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "eight_treasure": "https://i2.chuimg.com/62140e3fc4e24042aeb95b71fc100729_1178w_883h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "enoki": "https://i2.chuimg.com/592a7399c9ce4dfdb8b533ac2013ac97_1536w_2046h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "fried_chicken": "https://i2.chuimg.com/25616e94b04f4e06b34f95e50885fdab_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "fried_dumpling": "https://i2.chuimg.com/57e19148155047dcb898cfc4a1bffce9_2048w_2048h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "fried_noodles": "https://i2.chuimg.com/5b55a115668148e09e73ba84b28e74a0_1500w_1124h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "fried_peanuts": "https://i2.chuimg.com/4ac8a4ca89b611e6b87c0242ac110003_519w_666h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "fried_rice": "https://i2.chuimg.com/a88a6c7ca7104d7f96896a5ff3ecf42f_702w_513h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "fried_rice_noodle": "https://i2.chuimg.com/b65b1c8952d24850897b47c2d7bdde89_1176w_940h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "fries": "https://i2.chuimg.com/bab7c1f00d34482690159e24e4572636_2304w_3072h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "fungus": "https://i2.chuimg.com/677fc708875c11e6a9a10242ac110002_384w_512h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "fuzhu": "https://i2.chuimg.com/dfc008e64eef420f9d32a5b3a248a80d_920w_2000h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "garlic_broccoli": "https://i2.chuimg.com/2449eaf91512496cb4c10b6e742d3128_720w_576h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "garlic_pork": "https://i2.chuimg.com/6cdd659a859311e6b87c0242ac110003_1614w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "garlic_sprout_pork": "https://i2.chuimg.com/ccb439fb9d0b4c699650e3e9bd179c3d_1125w_1470h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "glutinous_rice": "https://i2.chuimg.com/05e31af0050f4dfcb0cc34f00a4055e5_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "grape": "https://i2.chuimg.com/11e4dab9a7384b38b111c9d7bbbd5dcb_1080w_1440h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "green_pepper": "https://i2.chuimg.com/52363ed8b71e42bebe1e8922086be426_900w_1200h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "guamian": "https://i2.chuimg.com/cfb3b6d2390e4eb6b39c0d2059e790e5_750w_600h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "guotie": "https://i2.chuimg.com/6d2ba04282474be8a42d0d2dd0fa80ec_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hairtail": "https://i2.chuimg.com/8823e14ef9ff470095f01cb000343128_1124w_1500h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "ham_sausage": "https://i2.chuimg.com/189befcecccf4ddbaa85989dd4959e24_677w_545h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hami_melon": "https://i2.chuimg.com/338d22bbefeb4a48a82438ba0304a470_960w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hand_cabbage": "https://i2.chuimg.com/6ea9fa0252a24845a72ad1220b0457aa_3024w_4030h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hand_pancake": "https://i2.chuimg.com/3f9cca34ded2438c945724c60111a39a_1518w_2025h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hefen": "https://i2.chuimg.com/b65b1c8952d24850897b47c2d7bdde89_1176w_940h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "honey": "https://i2.chuimg.com/3956453412ba42079ab01bdbbcdb8894_960w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hot_sour_noodles": "https://i2.chuimg.com/ba0995787f0041179a2fb8ebc1db3471_2160w_2880h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_beef_ball": "https://i2.chuimg.com/87897a0b62fd43dc94462ec402e53ba4_1824w_856h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_beef_omasum": "https://i2.chuimg.com/bf41b35df95a4081b6599fa2990960f3_756w_1008h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_beef_slice": "https://i2.chuimg.com/ea4f57da6e91484eb970daa0425bda85_745w_771h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_beef_tripe": "https://i2.chuimg.com/3884d177c2264f1ba5cfd8b381dd92b4_1000w_750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_broad_vermicelli": "https://i2.chuimg.com/6f1aff19a2cc4ba7a5d549a033a46b3e_1536w_2046h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_broth_mushroom": "https://i2.chuimg.com/8143390889844fe5b51790c9b9077e3b_2100w_2100h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_broth_tomato": "https://i2.chuimg.com/f08f216ba5c64ad2bd535c5d74cc867d_1080w_1920h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_crab_stick": "https://i2.chuimg.com/492ff4e70aea478f921141d487b4dbb9_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_duck_intestine": "https://i2.chuimg.com/359803d28b2f11e6a9a10242ac110002_1080w_1440h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_egg_dumpling": "https://i2.chuimg.com/80e9fa6f98e34c9f8162c9a859cbbe9e_749w_753h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_fish_ball": "https://i2.chuimg.com/bc0433bd88ef468a8e65ac40afddefed_4032w_3024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_lamb_roll": "https://i2.chuimg.com/fe630cee30f7458598d7067e3c1a965a_1079w_863h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_lotus_root_slice": "https://i2.chuimg.com/0f87a0b82f1340508baaf15886528c91_810w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_potato_slice": "https://i2.chuimg.com/c8ccfba08a3811e6a9a10242ac110002_1536w_2048h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_sesame_dip": "https://i2.chuimg.com/43af184e3d114109a74da911c4da9936_1242w_994h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_sesame_oil_dip": "https://i2.chuimg.com/8cc7da250e1a40abba8a5a69b41ea21c_1534w_2046h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_shrimp_dumpling": "https://i2.chuimg.com/fdfb13587f8d428f86d0dd32e773a190_1277w_2120h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_shrimp_paste": "https://i2.chuimg.com/7ca23eb72e37482fbe623c5fb05c3cf8_684w_912h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_sweet_potato_noodle": "https://i2.chuimg.com/daaefcdb72b447288c796190d97e21e6_2015w_3029h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_tofu_skin": "https://i2.chuimg.com/40117017ceb84ea698a03467f58f70e9_3998w_2999h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "hp_winter_melon_slice": "https://i2.chuimg.com/6b75fa3f740f42929dfbae64fb2751e7_1984w_1488h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "ice_bar": "https://i2.chuimg.com/8c1b8dba9fb14d80b37601a2912cbbeb_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "ice_cream": "https://i2.chuimg.com/54b303b94ea24e72848d902784a3fa21_1080w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "instant_noodle": "https://i2.chuimg.com/adce28e4077b446cbf3ee4fc2eb10e6e_1536w_2046h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "jelly": "https://i2.chuimg.com/361f48f0bcab41aeb47a47b21b70d0e7_864w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "jianbing": "https://i2.chuimg.com/9dbd10eaccdf4d2d863dcfd2b8cd933e_2448w_2448h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "kelp": "https://i2.chuimg.com/dba86eaf37864811929ffd568469c803_1124w_899h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "ketchup": "https://i2.chuimg.com/9b690146df55442589c3811875230aeb_640w_512h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "kiwi": "https://i2.chuimg.com/0812bd12876f11e6a9a10242ac110002_600w_836h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "kumquat": "https://i2.chuimg.com/111562b41b6b43c89b08ce29403bb105_1080w_817h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "kungpao_chicken": "https://i2.chuimg.com/4fc9a98e8a8c11e6b87c0242ac110003_4608w_3072h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "lamb_lean": "https://i2.chuimg.com/7b97e5dab0e24c1ba6e6e8357be295b4_1280w_1024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "lard": "https://i2.chuimg.com/1eda28fb9c13478fa405c17ef78ff476_550w_439h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "latiao": "https://i2.chuimg.com/49df62c98c044921b63d8fefbd9e7265_1050w_1400h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "leek": "https://i2.chuimg.com/f2879c07f2fa44c1a0b080587e718be1_1000w_750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "leek_egg": "https://i2.chuimg.com/45569d361d5040c38df67e24c18e992c_1242w_994h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "lemon": "https://i2.chuimg.com/ae564cbfd61e436bb33f71498d7722f8_1536w_2048h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "lettuce": "https://i2.chuimg.com/4a4826632ce24a1ba1667c3411cf7a38_3024w_3024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "liangpi": "https://i2.chuimg.com/3e87c5154ae240e99f066c7825f6842d_1080w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "lianou_fen": "https://i2.chuimg.com/86113b9419744af58019eb93dc50f3cf_668w_891h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "lotus_root": "https://i2.chuimg.com/a85e844bc90d4ffbb64fab0be643b5fa_1280w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "luncheon_meat": "https://i2.chuimg.com/83a4453289ee11e6b87c0242ac110003_1066w_800h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "luosifen": "https://i2.chuimg.com/40d09b1407e44d2bbd4b1988a0f7c203_3188w_2379h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "lychee": "https://i2.chuimg.com/9b8c8eca52d348c0a295d95c393d2f71_1840w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "malatang": "https://i2.chuimg.com/6671be6bc4a940ae80141719d162d6b7_2959w_3022h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "mango": "https://i2.chuimg.com/7a71c58b73c64187a528732a16f37530_868w_868h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "mantou": "https://i2.chuimg.com/7b67690b1e92491d9f626e6434d53cc1_1000w_750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "maocai": "https://i2.chuimg.com/de48bbe2183b4b91a16c2bac986c9217_640w_388h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "maoxuewang": "https://i2.chuimg.com/94c8f10fb46e4650a3916e6f12fa5206_1920w_1440h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "mapo_tofu": "https://i2.chuimg.com/6cdb592351464665a80b51e5585adf56_2613w_2089h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "marinated_egg": "https://i2.chuimg.com/5b0461346577443f8a983b65ddeb1da9_1008w_756h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "mayonnaise": "https://i2.chuimg.com/14ccd8aa5d8147ce9cb7d4f61ffa8eab_684w_912h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "milk_skim": "https://i2.chuimg.com/f699ed72883011e6b87c0242ac110003_480w_273h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "milk_tea": "https://i2.chuimg.com/14fc2e766e634a62b83dfaa320fb2140_750w_750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "milk_whole": "https://i2.chuimg.com/0d451cdbda7e43418d2636b45d7cb3a6_4032w_3024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "millet_congee": "https://i2.chuimg.com/f4f7904092f54954a5681793bb530b14_684w_912h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "mixian": "https://i2.chuimg.com/395e22b2f24841339e841e4f13f69158_1280w_1706h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "mung_bean": "https://i2.chuimg.com/07cee08ddad24811a63c359a2299daf2_1080w_1439h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "mung_soup": "https://i2.chuimg.com/a186de24bb53421e83366d6e5cc64bf8_1427w_1100h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "mung_sprout": "https://i2.chuimg.com/30305f16629f431088b844350c8125a8_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "mushroom_chicken": "https://i2.chuimg.com/1cc96bb119664d2f89d04385862f367d_750w_1000h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "niangao": "https://i2.chuimg.com/3087ac16ad274e16be7e8d849e29e591_2294w_1536h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "noodles": "https://i2.chuimg.com/e3930d418d0f4029bfc82d30b123dd12_1080w_1440h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "oats": "https://i2.chuimg.com/87d413746b9946dfaf535c7fcfe88c4e_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "oden": "https://i2.chuimg.com/27d9e46bfa974586b38b36e5b8e8ec45_3414w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "okra": "https://i2.chuimg.com/1a49b6268ab611e6a9a10242ac110002_750w_742h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "omurice": "https://i2.chuimg.com/49eda7a26be34c13a69fb2c88002ee88_3024w_4032h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "onion": "https://i2.chuimg.com/e5d24ba604f446a88fb1b11764d92e66_1009w_1431h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "orange": "https://i2.chuimg.com/4b389a37d89e4411a6682ce650b879ed_740w_985h.png?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "orange_juice": "https://i2.chuimg.com/ad492942983b476abc4e6d1404f436c7_744w_992h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "oreo": "https://i2.chuimg.com/e330f364bf4349f88210c6970e77cd58_750w_1124h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "oyster_sauce": "https://i2.chuimg.com/4a4826632ce24a1ba1667c3411cf7a38_3024w_3024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pasta": "https://i2.chuimg.com/8e5276d8e1da4a0f8bbb2b35da350039_5483w_3656h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "peach": "https://i2.chuimg.com/9955b39153064b1db59333fbb31d5642_1280w_960h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "peanut": "https://i2.chuimg.com/a5368c7437ef487c8d1f46242d1e46dd_3024w_4032h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "peanut_butter": "https://i2.chuimg.com/4755ffbd4e5045b1bbe8895b702057e1_1152w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pear": "https://i2.chuimg.com/c158fc753d054460ace2e585efd9c176_1080w_1328h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pepper_egg": "https://i2.chuimg.com/4235f978cd834affbad9a6895d5a7c79_2880w_2160h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pepper_pork": "https://i2.chuimg.com/3791af6fd9aa43f49923b0e16e3a087e_1534w_2046h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pineapple": "https://i2.chuimg.com/1603e145ca10469d941712ce4d1d6212_1280w_1710h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pistachio": "https://i2.chuimg.com/d29dc3c8d01d4fb89f7a8f282313ac2d_1441w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pizza": "https://i2.chuimg.com/de64c32289b511e6a9a10242ac110002_1948w_1742h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pomegranate": "https://i2.chuimg.com/1adad6d76d97402fa1fabdf1b88020af_1242w_1864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pomelo": "https://i2.chuimg.com/92637656c6a711e6bc9d0242ac110002_1280w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "popcorn": "https://i2.chuimg.com/e588cf56f6c840beb78f8145506f3417_1080w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pork_belly": "https://i2.chuimg.com/1b5b18625edb491ebb128b184a9a3678_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pork_lean": "https://i2.chuimg.com/71da9a4487184b089a4226207e377de5_1280w_1706h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pork_rib": "https://i2.chuimg.com/0fc1309e885411e6b87c0242ac110003_1248w_1237h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "potato": "https://i2.chuimg.com/cdf8ef0d09544d5aab581d5b95e222fe_3024w_4030h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pudding": "https://i2.chuimg.com/eb9425e0be934b0ebf849cf1a23d15eb_1500w_1500h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pumpkin": "https://i2.chuimg.com/20de85bc4fa54ba58dfff22a7378ad36_4032w_3024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "pumpkin_congee": "https://i2.chuimg.com/94c49aaba5584659b280a72cd1f764f1_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "purple_potato": "https://i2.chuimg.com/7287a8efcd1d47fbbfe58cd6f035561e_1923w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "quinoa": "https://i2.chuimg.com/0769ada2fc2943589863626b22ba5f17_2160w_1728h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "radish": "https://i2.chuimg.com/923619c0881511e6b87c0242ac110003_640w_640h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "red_bean_soup": "https://i2.chuimg.com/76768f0ad80e11e6947d0242ac110002_2000w_1333h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "rice_bowl": "https://i2.chuimg.com/52363ed8b71e42bebe1e8922086be426_900w_1200h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "rice_brown": "https://i2.chuimg.com/d98dfdb8b05246cbb665ba7e2d725e3e_768w_874h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "rice_cooked": "https://i2.chuimg.com/17ee292231cb4997b502d0a2f94c3d03_750w_875h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "roast_meat_rice": "https://i2.chuimg.com/3f0826988b6d11e6b87c0242ac110003_640w_361h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "roasted_cold_noodle": "https://i2.chuimg.com/069e61665f2b481bb9908733789e0f46_1280w_1024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "roujiamo": "https://i2.chuimg.com/fa3d9fc252a211e7bc9d0242ac110002_1944w_1944h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "saliva_chicken": "https://i2.chuimg.com/8b14ec0cae0b4ca1aa1b83bc940061f8_1280w_1708h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "salmon": "https://i2.chuimg.com/470946f17c2445a1984acc5de5e7895f_2160w_1216h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "salted_egg": "https://i2.chuimg.com/9e5bc1cf0faf43c1adf83aced5075615_1000w_562h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "sandwich": "https://i2.chuimg.com/7d8b897bdfe24be3a72a73a2457e8e61_3024w_3024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "scallion_pancake": "https://i2.chuimg.com/6eb7b5022dc442d89834fe2db0e7e26d_3024w_4032h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "seafood_soup": "https://i2.chuimg.com/c28152f28b6211e6b87c0242ac110003_1280w_960h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "sesame_paste": "https://i2.chuimg.com/581a75ac54aa44a8833989f358f4e74b_2508w_2910h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "shaobing": "https://i2.chuimg.com/38e9d1242573407192e502bb603da4a3_700w_999h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "shaomai": "https://i2.chuimg.com/21ad2d589a3811e6b2400242ac110002_1614w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "shiitake": "https://i2.chuimg.com/d9924b60b52e431cb1d7a1b7c39e59bb_2764w_4029h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "shrimp": "https://i2.chuimg.com/976407a26dd111e7947d0242ac110002_3024w_4032h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "shrimp_meat": "https://i2.chuimg.com/110dd659121147529b57c873bc09b225_1080w_720h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "soda_cracker": "https://i2.chuimg.com/6efc42bdd5074a57a8b35d3437f87b71_3024w_4032h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "sour_pepper_soup": "https://i2.chuimg.com/d2e58a6111764136b1d850b7804ebffe_1920w_1077h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "sour_potato": "https://i2.chuimg.com/f981ad54d4654870bb63582a7520b410_2669w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "soy_milk": "https://i2.chuimg.com/1a57ee965e5446ccbbcaf86e3ccc17bc_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "soy_sauce": "https://i2.chuimg.com/3037fb45053e4aabba555606873c9739_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "soybean": "https://i2.chuimg.com/3d186a7d801f4295b51deab9ec95ebac_2610w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "soybean_sprout": "https://i2.chuimg.com/18faeddf6dab412e92238b5e5e2fa820_2880w_2160h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "spinach": "https://i2.chuimg.com/a770c67b903c457fa42fe09fab1ebe57_1616w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "sports_drink": "https://i2.chuimg.com/088a9aab29e34a47b224342e7af63540_1280w_2277h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "squid": "https://i2.chuimg.com/4766cfc8961147908cd98b2771f45463_1032w_825h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "steak": "https://i2.chuimg.com/a3ec3a6777b3493189bc23a469529a77_4032w_3024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "steamed_egg": "https://i2.chuimg.com/0c6628d558b64ac1a9755a73475e59b5_1242w_1656h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "steamed_fish": "https://i2.chuimg.com/29498f08892a11e6b87c0242ac110003_3456w_2304h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "stir_beef": "https://i2.chuimg.com/a91dbcf6814248e9a1184e2dd2f65e85_2101w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "stir_greens": "https://i2.chuimg.com/acc4dfa1f0664a6cadf0d694eadfb1b0_1179w_1547h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "strawberry": "https://i2.chuimg.com/7bc008f4801f4ed4abdaa43c03c85540_2880w_3840h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "sugar": "https://i2.chuimg.com/155ef13fdcfd465593c85d758a23571c_1418w_1043h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "sunflower_seed": "https://i2.chuimg.com/c55d3ffc50ee457a925ae6a9c394a578_864w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "sushi": "https://i2.chuimg.com/de066491b07b41dc99538aea495c6169_1003w_802h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "sweet_loin": "https://i2.chuimg.com/35a8bcd0f0dd4a48a36e23e0f9d9f4b3_912w_684h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "sweet_potato": "https://i2.chuimg.com/fd2123ca704d4c828acf5dc638dabb40_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "tangyuan": "https://i2.chuimg.com/dbeb559489f511e6b87c0242ac110003_2816w_1880h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "tofu_egg": "https://i2.chuimg.com/8b7fe5de8d984f7c96786042d7ba08e9_750w_1000h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "tofu_north": "https://i2.chuimg.com/9564fb447a484234b805e1434d539a7f_1920w_1441h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "tofu_south": "https://i2.chuimg.com/9564fb447a484234b805e1434d539a7f_1920w_1441h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "tomato": "https://i2.chuimg.com/e84b11333fcf4ff1aab51dc5c383e426_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "tomato_beef": "https://i2.chuimg.com/37ec782162e64176949570c7c38144c5_1536w_2046h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "tomato_cauliflower": "https://i2.chuimg.com/459ee61c26d143fd8b115b893eaf1ef0_3780w_3024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "tomato_egg": "https://i2.chuimg.com/adcb20d4547d4f598f8d3f7f14928ba3_1280w_1024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "tomato_egg_soup": "https://i2.chuimg.com/b92c6c96a2d4482ba073d86ba5b8fcf8_937w_750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "tremella_soup": "https://i2.chuimg.com/3b5ed377b2d04e4a8af063d0c62c10ae_2320w_1740h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "trotter_rice": "https://i2.chuimg.com/a153e68bde2a4ad0ac284c0d5f310f13_1920w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "trotters": "https://i2.chuimg.com/7ab19900896411e6b87c0242ac110003_1239w_828h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "twice_pork": "https://i2.chuimg.com/8b92b69edd6b4f9381350c562ba37551_3072w_4095h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "vegetable_oil": "https://i2.chuimg.com/7e6ec41a8fd649e2afe5e5d96b3a992e_1620w_1080h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "vinegar": "https://i2.chuimg.com/4cb52da8a3784570a2a7efc0604d8cf7_2560w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "vinegar_cabbage": "https://i2.chuimg.com/c72cc5be870e11e6b87c0242ac110003_600w_800h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "walnut": "https://i2.chuimg.com/b87fab436d9f483cae8f6d27e7931009_1332w_999h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "watermelon": "https://i2.chuimg.com/2334c9dca70743b1b45c79fa0c5d6161_3414w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "wine_red": "https://i2.chuimg.com/657ecd1f5b5c44b59ad1bfbff5c44eb0_1124w_1392h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "wintermelon": "https://i2.chuimg.com/fc87993e026c40408a684309f4ccc550_3401w_2267h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "wintermelon_ribs": "https://i2.chuimg.com/ffcfc220cf22455eaf03a78aa5ede38d_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "xiaolongbao": "https://i2.chuimg.com/b8b5742e956042ee8f636b6f45f39d71_5000w_3750h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "yam": "https://i2.chuimg.com/4d10f22eb254424aa1325e7dfed4228c_2633w_2633h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "yogurt": "https://i2.chuimg.com/760334e70c604138a5dde907d64f1926_1080w_2340h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "yogurt_greek": "https://i2.chuimg.com/a76109ae7a5b4362a156fea10842ff41_1920w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "youmaicai": "https://i2.chuimg.com/fde0ee304e5f44d981920ff2e1dea270_1124w_899h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "youtiao": "https://i2.chuimg.com/97446c42879211e6a9a10242ac110002_5184w_3456h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "yuxiang_pork": "https://i2.chuimg.com/f3067a6e886111e6b87c0242ac110003_640w_640h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "zongzi": "https://i2.chuimg.com/3ee690a956514be398a7f938d28c7226_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "zongzi_sweet": "https://i2.chuimg.com/3ee690a956514be398a7f938d28c7226_1080w_864h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-        "d2_seaweed_egg_soup": "https://i2.chuimg.com/101a1056e0f94c0eaf98338f6310dad4_960w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
-    ]
+    private static let idList = """
+        almond americano ants_tree apple asparagus avocado
+        baby_cabbage bacon baijiu banana baozi bass
+        beef_jerky beef_lean beef_noodle beef_roll beer bibimbap
+        bitter_melon blueberry boiled_chicken boiled_pork_slices borscht braised_chicken_rice
+        braised_eggplant braised_hairtail braised_pork braised_ribs bread_toast bread_whole
+        brisket broccoli burger butter cabbage carrot
+        cashew celery_pork century_egg_congee cf_americano cf_cappuccino cf_caramel_macchiato
+        cf_cheese_foam_tea cf_coconut_latte cf_fruit_tea cf_hot_cocoa cf_latte cf_lemon_tea
+        cf_mango_pomelo cf_matcha_latte cf_milk_coffee cf_milk_tea cf_mocha cf_oat_latte
+        cf_taro_boba changfen cheese cherry cherry_tomato chicken_breast
+        chicken_leg chicken_nugget chicken_pot chicken_soup chicken_wing chips
+        clam cola cola_wings cola_zero cold_cucumber cold_fungus
+        congee corn corn_ribs crab cream_cake curry_chicken
+        curry_rice d2_americano_iced d2_beef_ball_soup d2_beef_chow_fun d2_beef_rice d2_beef_tendon
+        d2_big_plate_chicken d2_black_bean d2_blanched_shrimp d2_braised_noodles_bean d2_braised_pork_rice d2_braised_sea_cucumber
+        d2_brown_sugar_milk_tea d2_butter_cookie d2_caesar_salad d2_cauliflower d2_celery d2_char_siu
+        d2_cheese_grape_tea d2_cheese_slice d2_cheese_stick d2_chestnut d2_chicken_feet d2_chicken_popcorn
+        d2_chicken_salad d2_chicken_wrap d2_chickpea d2_chili_oil d2_chocolate_milk d2_chopped_pepper_fish_head
+        d2_claypot_rice d2_coconut_meat d2_coconut_water d2_condensed_milk d2_cookie_chocolate d2_cream
+        d2_dongpo_pork d2_double_burger d2_dried_beancurd_snack d2_durian d2_edamame d2_egg_pancake
+        d2_egg_roll d2_fish_fragrant_eggplant d2_fish_tofu d2_flat_white d2_fresh_soy_milk d2_fried_chicken_thigh
+        d2_fried_chicken_wing d2_fujian_wonton d2_geda_soup d2_glutinous_cake d2_glutinous_rice_roll d2_goose_meat
+        d2_grape_purple d2_guilin_rice_noodle d2_gummy d2_guobaorou d2_hand_grabbed_lamb d2_hazelnut
+        d2_hot_dry_noodles d2_hotdog d2_hp_crispy_pork d2_hp_duck_blood d2_hp_thousand_tripe d2_hulatang
+        d2_ice_cream_cone d2_konjac_snack d2_lamb_chop d2_lanzhou_noodles d2_liangfen d2_loofah
+        d2_mapo_rice d2_marshmallow d2_milk_candy d2_milk_oatmeal d2_northeast_stew d2_onion_ring
+        d2_oolong_tea d2_papaya d2_pea_shoot d2_pear_juice d2_pepper_pork_liver d2_persimmon
+        d2_pigeon d2_pine_nut d2_plum d2_popsicle_fruit d2_pork_bun d2_pork_chop_rice
+        d2_pork_ear d2_pork_heart d2_pork_jerky d2_pork_liver d2_potato_salad d2_potato_stew_beef
+        d2_potato_vermicelli d2_pumpkin_bun d2_quail_egg d2_radish_rib_soup d2_rice_ball d2_rice_cake_soup
+        d2_rice_cracker d2_roast_duck d2_salt_baked_chicken d2_salted_duck d2_salted_milk_tea d2_sandwich_egg
+        d2_sauerkraut_fish d2_scallion_oil_noodles d2_seaweed_cracker d2_seaweed_egg_soup d2_seaweed_roll d2_sesame_ball
+        d2_shaxian_noodles d2_shrimp_cracker d2_shuizhu_beef d2_soda_cracker_cream d2_soybean_trotter d2_sparkling_water
+        d2_spicy_chicken_burger d2_spicy_crayfish d2_sports_water d2_sprite d2_steamed_roll d2_stinky_tofu
+        d2_suan_cai_pork d2_sweet_sour_fish d2_swiss_roll d2_tea_egg d2_tofu_pudding d2_tofu_skin_sheet
+        d2_tomato_egg_rice d2_veggie_bun d2_wafer d2_westlake_fish d2_wheat_noodle_soup d2_whole_milk_powder
+        d2_wonton d2_wonton_noodles d2_xianggu_rice d2_yam_rib_soup d2_yanduxian d2_yangrou_paomo
+        d2_youmian_kao d2_zhajiang_noodles dark_chocolate disanxian donut doubanjiang
+        dragon_fruit dried_tofu dry_beans dry_cauliflower dry_four_season duck
+        duck_breast dumpling egg_boiled egg_fried egg_fried_rice egg_tart
+        egg_white eggplant eight_treasure enoki fried_chicken fried_dumpling
+        fried_noodles fried_peanuts fried_rice fried_rice_noodle fries fungus
+        fuzhu garlic_broccoli garlic_pork garlic_sprout_pork glutinous_rice grape
+        green_pepper guamian guotie hairtail ham_sausage hami_melon
+        hand_cabbage hand_pancake hefen honey hot_sour_noodles hp_beef_ball
+        hp_beef_omasum hp_beef_slice hp_beef_tripe hp_broad_vermicelli hp_broth_mushroom hp_broth_tomato
+        hp_crab_stick hp_duck_intestine hp_egg_dumpling hp_fish_ball hp_lamb_roll hp_lotus_root_slice
+        hp_potato_slice hp_sesame_dip hp_sesame_oil_dip hp_shrimp_dumpling hp_shrimp_paste hp_sweet_potato_noodle
+        hp_tofu_skin hp_winter_melon_slice ice_bar ice_cream instant_noodle jelly
+        jianbing kelp ketchup kiwi kumquat kungpao_chicken
+        lamb_lean lard latiao leek leek_egg lemon
+        lettuce liangpi lianou_fen lotus_root luncheon_meat luosifen
+        lychee malatang mango mantou maocai maoxuewang
+        mapo_tofu marinated_egg mayonnaise milk_skim milk_tea milk_whole
+        millet_congee mixian mung_bean mung_soup mung_sprout mushroom_chicken
+        niangao noodles oats oden okra omurice
+        onion orange orange_juice oreo oyster_sauce pasta
+        peach peanut peanut_butter pear pepper_egg pepper_pork
+        pineapple pistachio pizza pomegranate pomelo popcorn
+        pork_belly pork_lean pork_rib potato pudding pumpkin
+        pumpkin_congee purple_potato quinoa radish red_bean_soup rice_bowl
+        rice_brown rice_cooked roast_meat_rice roasted_cold_noodle roujiamo saliva_chicken
+        salmon salted_egg sandwich scallion_pancake seafood_soup sesame_paste
+        shaobing shaomai shiitake shrimp shrimp_meat soda_cracker
+        sour_pepper_soup sour_potato soy_milk soy_sauce soybean soybean_sprout
+        spinach sports_drink squid steak steamed_egg steamed_fish
+        stir_beef stir_greens strawberry sugar sunflower_seed sushi
+        sweet_loin sweet_potato tangyuan tofu_egg tofu_north tofu_south
+        tomato tomato_beef tomato_cauliflower tomato_egg tomato_egg_soup tremella_soup
+        trotter_rice trotters twice_pork vegetable_oil vinegar vinegar_cabbage
+        walnut watermelon wine_red wintermelon wintermelon_ribs xiaolongbao
+        yam yogurt yogurt_greek youmaicai youtiao yuxiang_pork
+        zongzi zongzi_sweet
+        """
+
+    private static let ids: Set<String> = Set(
+        idList.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+    )
 
     /// 打包进 App 的配图资源名；这个 id 没配图时返回 nil。
-    ///
-    /// 0.3.4 起这些图不再是远程地址：434 张压到 256×256 放进了 Assets 的 FoodImages 组，
-    /// 断网也有图。map 现在的作用不是取 URL，而是标记「哪些 id 配过图」。
     static func assetName(for id: String) -> String? {
-        map[id] == nil ? nil : "food_" + id
+        ids.contains(id) ? "food_" + id : nil
     }
+
+    /// 配图条目总数，供校验脚本与调试使用。
+    static var count: Int { ids.count }
 }
