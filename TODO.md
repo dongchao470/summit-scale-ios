@@ -491,3 +491,92 @@ Info.plist 的 `CFBundleShortVersionString` / `CFBundleVersion` 是**两处**，
   需要下一轮再改。
 - 套餐「改完再记」新增 / 改过的条目 `protein/carbs/fat = 0`（v0.4.1 遗留，本轮未动）。
 - 本轮未触碰 `FoodImages.map`，饮食库崩溃问题用户未再报告。
+
+## 10. v0.4.3（2026-10-11）趋势页与我的页改系统原生分组
+
+**用户诉求**：`ask_user` 回答「两个都改」——趋势页与我的页也改系统原生分组；
+加一条入口选「菜单就行，页面上清爽点」。
+
+**改动对照**
+
+| 文件 | 改前 | 改后 |
+| --- | --- | --- |
+| `Features/Trends/TrendsView.swift` | 348 行 / 12732 字节；`ScrollView` + `VStack`，4 张 `.card()`，各带 `CardTitle` | 5 个 `Section`：时间范围选择器 / 这段时间 / 体重走向 / 每日摄入 / 运动消耗 |
+| `Features/Profile/ProfileHomeView.swift` | 202 行 / 7985 字节；3 张 `.card()` | 3 个 `Section`：档案 / 固定套餐 / 关于 |
+
+两页外层都是 `List { }.listStyle(.insetGrouped)`，`navigationTitle` 不变；
+删掉 `Theme.pageBackground` 背景与 `.padding(.bottom, 96)`。
+
+**统一的分组标题写法**
+
+```swift
+private func sectionHeader(_ text: String, symbol: String) -> some View {
+    HStack(spacing: 6) {
+        Image(systemName: symbol)
+            .font(.caption.weight(.semibold))
+            .foregroundColor(Theme.accent)
+            .accessibilityHidden(true)
+        Text(text)
+    }
+    .textCase(nil)
+}
+```
+
+`.textCase(nil)` 必须加，否则系统把分组标题整成大写。档案组标题右侧的「编辑」按钮、
+体重组的涨跌标签也都在 header 里，同样要带 `.textCase(nil)`。
+
+**顺手清掉的**
+
+- 全项目 `.card()` 从 12 处降到 **0 处**；`Theme.pageBackground` / `Theme.stackSpacing`
+  引用清零（`Theme.swift` 里的定义保留，其他页可能还要用）。
+- 趋势页运动行去掉 26×26 绿底圆圈和手写 `Divider`，改系统行分隔；单位从 `kcal` 统一成「千卡」。
+- 我的页「管理套餐」去掉手写 `chevron.right`——`NavigationLink` 在 List 里自带箭头。
+- `emptyHint` 去掉 `.padding(.vertical, 18)` 与 `.frame(maxWidth: .infinity)`，排版交给 List。
+
+**本地核查**：39 个 Swift 文件逐文件括号配平 PASS；`.card()` 零残留；
+`ScrollView` 只剩 TodayView 注释里 1 处与 `FoodPickerSheet` 的横向标签条 1 处（均属正常）。
+
+**踩到的坑：替换边界吃掉大括号**
+
+`file_edit` 替换「我的页」套餐区时，`old_string` 以 `.card()` 结尾而没带上后面那行的 `}`，
+结果新代码自带一个闭合括号、旧的那个又留在原地 → 多出一个 `}`。
+文件级括号检查立刻报「未闭合」，读现场确认后一并修掉。
+**教训**：替换一个 `VStack { … }.card()` 块时，`old_string` 要么吃到 `.card()` 为止并把
+新代码写成「无外层闭合」，要么连结尾的 `}` 一起吃掉。写完后一定跑一次全文件括号配平。
+
+**新验证法：拿属性名当探针**
+
+Swift 的 `private var xxxCard: some View` 这类计算属性名会进二进制，
+中文短字面量却会被 small-string 内联掉（见第 9 节）。
+所以改代码结构时，用「旧属性名消失 + 新属性名出现」做双向对照最可靠：
+
+| 探针 | build 13 | build 14 |
+| --- | --- | --- |
+| `summarySection` | 0 | 4 |
+| `weightSection` | 0 | 11 |
+| `intakeSection` | 0 | 10 |
+| `activitySection` | 0 | 8 |
+| `profileSection` | 0 | 12 |
+| `templateSection` | 0 | 14 |
+| `aboutSection` | 0 | 8 |
+| `summaryCard` | 10 | 0 |
+| `intakeCard` | 17 | 0 |
+| `profileCard` | 13 | 0 |
+| `templateCard` | 14 | 0 |
+| `aboutCard` | 7 | 0 |
+| `weightCard`（今天页也有） | 76 | 58 |
+| `activityCard`（今天页也有） | 85 | 70 |
+
+最后两行是**对照组**：同名属性在今天页还在用，所以不能归零、只能减少——
+正好少掉趋势页那一份，这才能排除「全局误删」。
+二进制 3067760 → 2946480 字节（-121280）。
+
+**验证**：run `38141955812`（sha `6a628b4`）completed/success；产物
+`SummitScale-0.4.3-build14-unsigned.ipa` 6339951 字节，sha256 与工作流记录一致；
+Info.plist 短版本 0.4.3 / 构建号 14 / 最低系统 16.0。
+
+**未做真机验证** —— 需用户安装后确认：趋势页 5 个分组在深色模式下的间距与可读性、
+曲线与柱状图放进分组后的高度是否合适、我的页套餐行与「管理套餐」跳转正常。
+
+**已知遗留**：套餐「改完再记」里新加或改过的条目写 `protein/carbs/fat = 0`
+（v0.4.1 起，本轮未动）；`FoodImages.map` 那次崩溃用户未再报告，本轮未触碰。
