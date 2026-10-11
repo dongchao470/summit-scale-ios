@@ -477,8 +477,14 @@ struct TodayView: View {
 
     private func foodRow(_ entry: FoodEntry) -> some View {
         HStack(spacing: 10) {
-            FoodThumb(urlString: entry.imageURL, size: 36)
-
+            FoodThumb(
+                // FoodEntry 只有一个图片字段：联网条目存 http 地址，
+                // 本地条目存打包资源名，靠前缀分流。
+                imageName: (entry.imageURL?.hasPrefix("http") ?? false) ? nil : entry.imageURL,
+                urlString: (entry.imageURL?.hasPrefix("http") ?? false) ? entry.imageURL : nil,
+                symbol: FoodCategorySymbol.symbol(for: entry.category),
+                size: 36
+            )
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)
                     .font(.subheadline)

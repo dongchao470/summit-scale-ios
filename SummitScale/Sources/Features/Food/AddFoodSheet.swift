@@ -152,7 +152,12 @@ struct AddFoodSheet: View {
         Section("吃什么") {
             if let food = editedFood {
                 HStack(spacing: 12) {
-                    FoodThumb(urlString: food.imageURL, size: 56)
+                    FoodThumb(
+                        imageName: food.imageName,
+                        urlString: food.imageURL,
+                        symbol: FoodCategorySymbol.symbol(for: food.category),
+                        size: 56
+                    )
                     VStack(alignment: .leading, spacing: 3) {
                         Text(food.name)
                             .font(.body.weight(.medium))
@@ -335,7 +340,8 @@ struct AddFoodSheet: View {
                 foodID: food.id,
                 note: food.isRemote ? "联网条目" : nil,
                 date: date,
-                imageURL: food.imageURL,
+                // FoodEntry 只有一个图片字段：联网条目存 http 地址，本地条目存打包资源名。
+                imageURL: food.isRemote ? food.imageURL : food.imageName,
                 source: food.isRemote ? FoodSource.remote : FoodSource.library,
                 // 联网条目把外部 id 也存上，方便以后去重和对账。
                 externalID: food.isRemote ? food.id : nil

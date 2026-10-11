@@ -64,6 +64,20 @@ def main():
     by_id = [i for i in items if i[0] in keyset]
     dangling = sorted(keyset - {i[0] for i in items})
 
+    # 0.3.4 起配图改为打包进 Assets，id 和资源名必须一一对上，
+    # 少一个在真机上就是静默空白，不会报错，所以这里当硬错误。
+    asset_root = ROOT / "SummitScale" / "Resources" / "Assets.xcassets" / "FoodImages"
+    missing_assets = []
+    for key in sorted(keyset):
+        imageset = asset_root / ("food_" + key + ".imageset")
+        jpg = imageset / (key + ".jpg")
+        if not imageset.is_dir() or not jpg.is_file():
+            missing_assets.append(key)
+    if missing_assets:
+        problems.append(f"{len(missing_assets)} 个配图缺少打包资源，例如：{missing_assets[:5]}")
+    else:
+        print(f"打包资源齐备: {asset_root}")
+
     print(f"配图条目: {len(pairs)}（唯一 {len(keyset)}）")
     print(f"食物库条目: {len(items)}")
     print(f"按 id 命中的条目: {len(by_id)}")

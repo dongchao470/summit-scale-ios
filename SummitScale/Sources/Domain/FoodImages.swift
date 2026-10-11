@@ -1,11 +1,15 @@
 import Foundation
 
-/// 本地食物库的配图。数据来自下厨房搜索页，按食物名匹配，匹配不到就不配图，
-/// 列表里会退回分类图标兜底。
+/// 本地食物库的配图索引。
 ///
-/// 链接是七牛云图床，走网络加载；断网时上层会自动退回图标，不会空白。
+/// 图片来源是下厨房搜索页，按食物名匹配；匹配不上的（成分表那批食材、中式成菜）不配图，
+/// 界面按分类退回 SF Symbol 图标。
+///
+/// 0.3.4 起这些图已经压到 256×256 打包进 Assets 的 FoodImages 组，断网也有图。
+/// 下面 map 里留的地址只作来源记录，程序不再拿它取图；判断某个 id 有没有配图，
+/// 用 assetName(for:)。
 enum FoodImages {
-    /// 食物 id -> 图片地址。
+    /// 食物 id -> 原图来源地址（仅记录，不再用于加载）。
     private static let map: [String: String] = [
         "almond": "https://i2.chuimg.com/0a0fdd0bb8cc4798ad9eb118740c79e9_3414w_2560h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
         "americano": "https://i2.chuimg.com/99f59fa767ab487e80025bf1ef1ad5ba_4032w_3024h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
@@ -443,7 +447,11 @@ enum FoodImages {
         "d2_seaweed_egg_soup": "https://i2.chuimg.com/101a1056e0f94c0eaf98338f6310dad4_960w_1280h.jpg?imageView2/1/w/320/h/320/interlace/1/q/75",
     ]
 
-    static func url(for id: String) -> String? {
-        map[id]
+    /// 打包进 App 的配图资源名；这个 id 没配图时返回 nil。
+    ///
+    /// 0.3.4 起这些图不再是远程地址：434 张压到 256×256 放进了 Assets 的 FoodImages 组，
+    /// 断网也有图。map 现在的作用不是取 URL，而是标记「哪些 id 配过图」。
+    static func assetName(for id: String) -> String? {
+        map[id] == nil ? nil : "food_" + id
     }
 }

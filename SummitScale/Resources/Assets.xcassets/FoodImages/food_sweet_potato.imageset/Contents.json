@@ -1,0 +1,12 @@
+{
+  "images": [
+    {
+      "filename": "sweet_potato.jpg",
+      "idiom": "universal"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

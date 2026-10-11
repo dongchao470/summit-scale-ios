@@ -14,9 +14,11 @@ struct FoodItem: Identifiable, Hashable {
     /// 常见一份的说法。
     let commonLabel: String
 
-    /// 配图地址。本地库本身不带图，靠 FoodImages 里按 id 查到的图；
-    /// 查不到就返回 nil，列表会退回分类图标兜底，不会留空白。
-    var imageURL: String? { FoodImages.url(for: id) }
+    /// 打包进 App 的配图资源名。
+    ///
+    /// 本地库本身不带图，靠 FoodImages 里按 id 查；成分表那批食材没配图，
+    /// 查不到就返回 nil，列表按分类退回 SF Symbol，不会留空白。
+    var imageName: String? { FoodImages.assetName(for: id) }
 
     /// 按克数换算这一份的热量。
     func kcal(grams: Double) -> Double { kcalPer100g * grams / 100 }

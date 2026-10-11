@@ -15,13 +15,17 @@ struct PickedFood: Identifiable, Hashable {
     let commonGrams: Double
     let commonLabel: String
     let isRemote: Bool
+    /// 打包进 App 的配图资源名。本地库配过图的才有，联网条目一律 nil。
+    let imageName: String?
 
     init(item: FoodItem) {
         id = item.id
         name = item.name
         brand = nil
         category = item.category
-        imageURL = item.imageURL
+        // 本地条目的图现在是打包资源，不再是远程地址。
+        imageName = item.imageName
+        imageURL = nil
         kcalPer100 = item.kcalPer100g
         proteinPer100 = item.proteinPer100g
         carbsPer100 = item.carbsPer100g
@@ -40,6 +44,7 @@ struct PickedFood: Identifiable, Hashable {
         name = remote.name
         brand = remote.brand
         category = local?.category ?? "联网"
+        imageName = nil
         imageURL = remote.imageURL
         kcalPer100 = remote.kcalPer100 > 0 ? remote.kcalPer100 : (local?.kcalPer100g ?? 0)
         proteinPer100 = remote.proteinPer100 > 0 ? remote.proteinPer100 : (local?.proteinPer100g ?? 0)
@@ -56,6 +61,7 @@ struct PickedFood: Identifiable, Hashable {
         name: String,
         brand: String?,
         category: String,
+        imageName: String?,
         imageURL: String?,
         kcalPer100: Double,
         proteinPer100: Double,
@@ -69,6 +75,7 @@ struct PickedFood: Identifiable, Hashable {
         self.name = name
         self.brand = brand
         self.category = category
+        self.imageName = imageName
         self.imageURL = imageURL
         self.kcalPer100 = kcalPer100
         self.proteinPer100 = proteinPer100
@@ -94,6 +101,7 @@ struct PickedFood: Identifiable, Hashable {
             name: name,
             brand: brand,
             category: category,
+            imageName: imageName,
             imageURL: imageURL,
             kcalPer100: kcalPer100,
             proteinPer100: proteinPer100,
@@ -118,13 +126,27 @@ struct PickedFood: Identifiable, Hashable {
 }
 
 /// 食物缩略图。联网食物有图就显示图，没有就退回占位图标，不留白洞。
+/// 食物缩略图。
+///
+/// 三个来源按优先级取：打包进 App 的图片资源（食物库那 434 条配过图）、
+/// 远程地址（联网搜出来的结果）、SF Symbol（按分类兜底）。
+/// 成分表那 1503 条食材和中式成菜没有照片，走最后一档，不留空白。
 struct FoodThumb: View {
-    let urlString: String?
+    /// Assets 里的资源名，食物库条目用
+    var imageName: String? = nil
+    /// 远程图片地址，联网条目用
+    var urlString: String? = nil
+    /// 前两个都没有时显示的 SF Symbol
+    var symbol: String = "fork.knife"
     var size: CGFloat = 46
 
     var body: some View {
         Group {
-            if let urlString = urlString, let url = URL(string: urlString) {
+            if let imageName = imageName {
+                Image(imageName)
+                    .resizable()
+                    .scaledToFill()
+            } else if let urlString = urlString, let url = URL(string: urlString) {
                 AsyncImage(url: url) { phase in
                     switch phase {
                     case .success(let image):
@@ -152,7 +174,7 @@ struct FoodThumb: View {
     }
 
     private var placeholder: some View {
-        Image(systemName: "fork.knife")
+        Image(systemName: symbol)
             .font(.system(size: size * 0.38))
             .foregroundColor(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -254,9 +276,9 @@ struct FoodPickerSheet: View {
                             name: item.name,
                             subtitle: "\(item.category) · 一份 \(item.commonLabel) \(Fmt.grams(item.commonGrams)) g",
                             kcalPer100: item.kcalPer100g,
-                            // 本地条目本身不带图，取 FoodImages 里按 id 配的图；
-                            // 没配到的条目会退回分类图标，不会留空白。
-                            imageURL: item.imageURL
+                            // 配过图的取打包资源（断网也有），没配图的按分类退回 SF Symbol。
+                            imageName: item.imageName,
+                            symbol: FoodCategorySymbol.symbol(for: item.category)
                         )
                     }
                     .buttonStyle(.plain)
@@ -335,7 +357,8 @@ struct FoodPickerSheet: View {
                             name: food.name,
                             subtitle: remoteSubtitle(food),
                             kcalPer100: PickedFood(remote: food).kcalPer100,
-                            imageURL: food.imageURL
+                            urlString: food.imageURL,
+                            symbol: FoodCategorySymbol.symbol(for: "快餐")
                         )
                     }
                     .buttonStyle(.plain)
@@ -370,10 +393,12 @@ struct FoodPickerSheet: View {
         name: String,
         subtitle: String,
         kcalPer100: Double,
-        imageURL: String?
+        imageName: String? = nil,
+        urlString: String? = nil,
+        symbol: String = "fork.knife"
     ) -> some View {
         HStack(spacing: 12) {
-            FoodThumb(urlString: imageURL)
+            FoodThumb(imageName: imageName, urlString: urlString, symbol: symbol)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(name)

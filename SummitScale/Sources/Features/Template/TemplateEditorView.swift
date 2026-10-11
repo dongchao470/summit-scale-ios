@@ -153,7 +153,8 @@ struct TemplateEditorView: View {
                 protein: food.protein(grams: grams),
                 carbs: food.carbs(grams: grams),
                 fat: food.fat(grams: grams),
-                imageURL: food.imageURL
+                // 模板条目也只有一个图片字段：联网的存 http 地址，本地库存打包资源名。
+                imageURL: food.isRemote ? food.imageURL : food.imageName
             )
         )
     }

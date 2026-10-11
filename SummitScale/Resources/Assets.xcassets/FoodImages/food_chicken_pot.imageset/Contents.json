@@ -1,0 +1,12 @@
+{
+  "images": [
+    {
+      "filename": "chicken_pot.jpg",
+      "idiom": "universal"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}
