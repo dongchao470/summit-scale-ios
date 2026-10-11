@@ -104,8 +104,7 @@ struct TodayView: View {
             // 分组间距、圆角、分隔线、左滑这些交给系统，比手写的好看也好维护。
             List {
                 if let ledger = ledger {
-                    Section { calorieCard(ledger) }
-                    Section { macroCard(ledger.budget) }
+                    Section { calorieHeroCard(ledger) }
                 } else {
                     Section { profilePromptCard }
                 }
@@ -117,7 +116,7 @@ struct TodayView: View {
                 Section { activityCard }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle(greetingTitle)
+            .navigationTitle("今天")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     recordMenu
@@ -182,24 +181,78 @@ struct TodayView: View {
 
     // MARK: - 热量卡
 
-    private func calorieCard(_ ledger: DayLedger) -> some View {
-        // 环中心已写「还能吃」，右侧图例已写目标/已吃/运动；
-        // 原来下面那排 StatTile（已摄入/预算/还能吃）是同一组数字再印一遍，纯冗余，删掉。
-        CalorieRingView(ledger: ledger)
-    }
+    private func calorieHeroCard(_ ledger: DayLedger) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("今日已摄入")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(Fmt.kcal(ledger.intakeKcal))
+                            .font(Theme.number(44, weight: .bold))
+                            .foregroundColor(Theme.primaryText)
+                        Text("kcal")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.secondary)
+                    }
+                    remainingMeta(ledger)
+                }
+                Spacer(minLength: 0)
+                heroRing(ledger)
+            }
 
-    // MARK: - 营养素卡
+            Divider()
 
-    private func macroCard(_ budget: CalorieBudget) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            CardTitle(text: "三大营养素", symbol: "chart.bar.xaxis")
             MacroPanel(
                 protein: macroTotals.protein,
                 carbs: macroTotals.carbs,
                 fat: macroTotals.fat,
-                budget: budget
+                budget: ledger.budget
             )
         }
+        .padding(.vertical, 2)
+    }
+
+    /// 目标 + 还可吃/超出 的小字；还可吃用强调色点一下，超出走中性，不用红。
+    private func remainingMeta(_ ledger: DayLedger) -> some View {
+        let remaining = ledger.remainingKcal
+        return HStack(spacing: 4) {
+            Text("目标 \(Fmt.kcal(ledger.budget.intakeTarget)) ·")
+                .foregroundColor(.secondary)
+            if remaining >= 0 {
+                Text("还可吃 \(Fmt.kcal(remaining)) kcal")
+                    .foregroundColor(Theme.accent)
+            } else {
+                Text("已超出 \(Fmt.kcal(-remaining)) kcal")
+                    .foregroundColor(.secondary)
+            }
+        }
+        .font(.footnote.weight(.medium))
+    }
+
+    /// 右侧进度环：中心显示占目标的百分比，只用强调色，超标也封顶在整圈。
+    private func heroRing(_ ledger: DayLedger) -> some View {
+        let progress = min(1.0, max(0.0, ledger.progress))
+        return ZStack {
+            Circle()
+                .stroke(Color(.systemGray5), lineWidth: 9)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(Theme.accent, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            VStack(spacing: 1) {
+                Text("\(Int((ledger.progress * 100).rounded()))%")
+                    .font(Theme.number(18, weight: .semibold))
+                    .foregroundColor(Theme.primaryText)
+                Text("目标")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(width: 86, height: 86)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("已摄入占目标 \(Int((ledger.progress * 100).rounded())) 个百分点")
     }
 
     // MARK: - 档案缺失
@@ -260,7 +313,7 @@ struct TodayView: View {
                     systemImage: delta <= 0 ? "arrow.down.right" : "arrow.up.right"
                 )
                 .font(.caption)
-                .foregroundColor(delta <= 0 ? Theme.success : Theme.warning)
+                .foregroundColor(delta <= 0 ? Theme.accent : .secondary)
             }
         }
     }

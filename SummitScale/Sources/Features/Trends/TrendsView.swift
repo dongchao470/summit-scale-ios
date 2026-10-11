@@ -141,6 +141,7 @@ struct TrendsView: View {
                 }
 
                 summarySection
+                recordSection
                 weightSection
                 intakeSection
                 activitySection
@@ -164,33 +165,87 @@ struct TrendsView: View {
 
     private var summarySection: some View {
         Section {
-            HStack(spacing: 8) {
-                StatTile(
-                    title: "平均摄入",
-                    value: averageIntake > 0 ? Fmt.kcal(averageIntake) : "—",
-                    unit: "kcal",
-                    tint: Theme.accent
-                )
-                StatTile(
-                    title: "累计运动",
-                    value: Fmt.kcal(totalBurn),
-                    unit: "kcal",
-                    tint: Theme.success
-                )
-                StatTile(
-                    title: "记录天数",
-                    value: "\(loggedDays)",
-                    unit: "天"
-                )
+            // 参考风格：一个大号黑体 hero 数字领头，次级统计走中性灰，不再三块彩色数字抢眼。
+            VStack(alignment: .leading, spacing: 2) {
+                Text("平均每日摄入")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(averageIntake > 0 ? Fmt.kcal(averageIntake) : "—")
+                        .font(Theme.number(42, weight: .bold))
+                        .foregroundColor(.primary)
+                    Text("kcal")
+                        .font(.title3)
+                        .foregroundColor(.secondary)
+                }
+                Text(budget.map { "每日目标 \(Fmt.kcal($0.intakeTarget)) kcal" } ?? "先完成档案，才会算出目标")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
             }
-            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
 
-            Text(budget.map { "每日摄入目标 \(Fmt.kcal($0.intakeTarget)) kcal" } ?? "先完成档案，才会算出目标")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            HStack(spacing: 0) {
+                miniStat(title: "累计运动", value: Fmt.kcal(totalBurn), unit: "kcal")
+                Divider().frame(height: 34)
+                miniStat(title: "记录天数", value: "\(loggedDays)", unit: "天")
+            }
         } header: {
             sectionHeader("这段时间", symbol: "calendar")
         }
+    }
+
+    /// 记录热度：仿参考图的热力网格，按每天摄入占目标的比例着色，只用强调色深浅表达，不掺红绿。
+    private var recordSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                RecordHeatmap(days: dailyIntake, target: budget?.intakeTarget)
+
+                HStack(spacing: 6) {
+                    Text("少")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    ForEach(0..<5, id: \.self) { level in
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(RecordHeatmap.color(for: level))
+                            .frame(width: 11, height: 11)
+                    }
+                    Text("多")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Spacer(minLength: 0)
+                    Text("\(loggedDays)/\(dailyIntake.count) 天有记录")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("记录热度，这段时间 \(dailyIntake.count) 天里有 \(loggedDays) 天记录了饮食")
+        } header: {
+            sectionHeader("记录热度", symbol: "square.grid.2x2.fill")
+        }
+    }
+
+    /// 次级小统计：灰标题 + 黑数字，水平均分，参考风格里的底排小字。
+    private func miniStat(title: String, value: String, unit: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(Theme.number(20))
+                    .foregroundColor(.primary)
+                Text(unit)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title) \(value) \(unit)")
     }
 
     private var weightSection: some View {
@@ -216,13 +271,14 @@ struct TrendsView: View {
                     }
 
                     if let target = profile?.targetWeightKilograms {
+                        // 目标线走中性灰虚线，不抢体重曲线的强调色，也不再用绿色。
                         RuleMark(y: .value("目标", target))
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                            .foregroundStyle(Theme.success)
+                            .foregroundStyle(Theme.secondaryText)
                             .annotation(position: .top, alignment: .leading) {
                                 Text("目标 \(Fmt.kg(target)) kg")
                                     .font(.caption2)
-                                    .foregroundColor(Theme.success)
+                                    .foregroundColor(.secondary)
                             }
                     }
                 }
@@ -244,9 +300,10 @@ struct TrendsView: View {
                 Text("体重走向")
                 Spacer()
                 if let change = weightChange {
+                    // 方向靠箭头字形表达，颜色只在"下降（达成方向）"时点一下强调色，增重则走中性灰，不用红绿。
                     Text(change <= 0 ? "↓ \(Fmt.kg(abs(change))) kg" : "↑ \(Fmt.kg(change)) kg")
                         .font(.footnote.weight(.semibold))
-                        .foregroundColor(change <= 0 ? Theme.success : Theme.warning)
+                        .foregroundColor(change <= 0 ? Theme.accent : .secondary)
                 }
             }
             .textCase(nil)
@@ -264,18 +321,14 @@ struct TrendsView: View {
                             x: .value("日期", item.day),
                             y: .value("摄入", item.value)
                         )
-                        .foregroundStyle(
-                            item.value > (budget?.intakeTarget ?? .infinity)
-                                ? Theme.warning
-                                : Theme.accent.opacity(0.85)
-                        )
+                        .foregroundStyle(Theme.accent.opacity(0.85))
                         .cornerRadius(4)
                     }
 
                     if let budget = budget {
                         RuleMark(y: .value("目标", budget.intakeTarget))
                             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
-                            .foregroundStyle(Theme.success)
+                            .foregroundStyle(Theme.secondaryText)
                     }
                 }
                 .chartYScale(domain: calorieDomain)
@@ -315,7 +368,7 @@ struct TrendsView: View {
                     HStack(spacing: 10) {
                         Image(systemName: entry.kindValue.symbol)
                             .font(.footnote.weight(.semibold))
-                            .foregroundColor(Theme.success)
+                            .foregroundColor(Theme.accent)
                             .frame(width: 26)
 
                         VStack(alignment: .leading, spacing: 1) {
@@ -330,7 +383,7 @@ struct TrendsView: View {
 
                         Text("-\(Fmt.kcal(entry.kcal)) 千卡")
                             .font(Theme.number(15))
-                            .foregroundColor(Theme.success)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
@@ -349,5 +402,76 @@ struct TrendsView: View {
         let day: Date
         let value: Double
         var id: Date { day }
+    }
+
+    /// GitHub 式记录热力网格：列=周、行=星期，格子颜色按当天摄入占目标的比例取强调色深浅。
+    private struct RecordHeatmap: View {
+        let days: [DayValue]
+        let target: Double?
+
+        /// 把一天折算成 0–4 的热度档位：0 没记录，1–4 越吃越深。
+        private func level(for value: Double) -> Int {
+            guard value > 0 else { return 0 }
+            guard let target = target, target > 0 else { return 2 }
+            let ratio = value / target
+            if ratio < 0.5 { return 1 }
+            if ratio < 0.85 { return 2 }
+            if ratio <= 1.1 { return 3 }
+            return 4
+        }
+
+        /// 档位配色：只用强调色透明度表达深浅，空白走中性轨道灰。
+        static func color(for level: Int) -> Color {
+            switch level {
+            case 1: return Theme.accent.opacity(0.28)
+            case 2: return Theme.accent.opacity(0.48)
+            case 3: return Theme.accent.opacity(0.72)
+            case 4: return Theme.accent
+            default: return Color(.systemGray5)
+            }
+        }
+
+        /// 按星期把连续的日子切成周列，前面补空格好让首格落在正确的星期行。
+        private var columns: [[DayValue?]] {
+            let calendar = Calendar.current
+            guard let first = days.first else { return [] }
+            let lead = (calendar.component(.weekday, from: first.day) - calendar.firstWeekday + 7) % 7
+
+            var result: [[DayValue?]] = []
+            var current: [DayValue?] = Array(repeating: nil, count: lead)
+            for day in days {
+                if current.count == 7 {
+                    result.append(current)
+                    current = []
+                }
+                current.append(day)
+            }
+            if !current.isEmpty {
+                while current.count < 7 { current.append(nil) }
+                result.append(current)
+            }
+            return result
+        }
+
+        var body: some View {
+            let cols = max(columns.count, 1)
+            let gap: CGFloat = 3
+            let maxWidth: CGFloat = 330
+            let size = min(22, max(10, (maxWidth - CGFloat(cols - 1) * gap) / CGFloat(cols)))
+
+            HStack(alignment: .top, spacing: gap) {
+                ForEach(columns.indices, id: \.self) { c in
+                    VStack(spacing: gap) {
+                        ForEach(0..<7, id: \.self) { r in
+                            let cell = columns[c][r]
+                            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                .fill(cell == nil ? Color.clear : RecordHeatmap.color(for: level(for: cell!.value)))
+                                .frame(width: size, height: size)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+        }
     }
 }

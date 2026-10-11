@@ -27,6 +27,7 @@ struct ProfileHomeView: View {
     var body: some View {
         NavigationStack {
             List {
+                profileHeroSection
                 profileSection
                 templateSection
                 aboutSection
@@ -39,18 +40,76 @@ struct ProfileHomeView: View {
         }
     }
 
+    // MARK: - 档案卡（头像 + 目标进度）
+
+    /// 顶部一张档案卡：头像取名字首字，右侧名字与目标体重进度，点整卡进编辑。
+    @ViewBuilder
+    private var profileHeroSection: some View {
+        if let profile = profile {
+            Section {
+                Button {
+                    showProfileEditor = true
+                } label: {
+                    HStack(spacing: 14) {
+                        Text(avatarInitial(profile))
+                            .font(.title2.weight(.semibold))
+                            .foregroundColor(Theme.accent)
+                            .frame(width: 54, height: 54)
+                            .background(Theme.accent.opacity(0.12))
+                            .clipShape(Circle())
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(profile.name.isEmpty ? "还没填称呼" : profile.name)
+                                .font(.title3.weight(.semibold))
+                                .foregroundColor(.primary)
+                            Text(targetSummary(profile))
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer(minLength: 4)
+
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(Color(uiColor: .tertiaryLabel))
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("编辑档案，\(profile.name.isEmpty ? "未填称呼" : profile.name)")
+            }
+        }
+    }
+
+    /// 头像里显示的字：名字首字，空就用「你」。
+    private func avatarInitial(_ profile: UserProfile) -> String {
+        let name = profile.name.trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? "你" : String(name.prefix(1))
+    }
+
+    /// 档案卡副标题：目标体重 + 距目标还差多少。
+    private func targetSummary(_ profile: UserProfile) -> String {
+        let target = profile.targetWeightKilograms
+        guard let current = currentKilograms else {
+            return "目标 \(Fmt.kg(target)) kg"
+        }
+        let diff = current - target
+        if abs(diff) < 0.05 {
+            return "目标 \(Fmt.kg(target)) kg · 已达标"
+        }
+        return "目标 \(Fmt.kg(target)) kg · 还差 \(Fmt.kg(abs(diff))) kg"
+    }
+
     // MARK: - 档案
 
     private var profileSection: some View {
         Section {
             if let profile = profile {
-                infoRow("称呼", profile.name.isEmpty ? "还没填" : profile.name)
                 infoRow("性别", profile.sexValue.title)
                 infoRow("年龄", "\(age(from: profile.birthDate)) 岁")
                 infoRow("身高", "\(Fmt.height(profile.heightCentimeters)) cm")
-                infoRow("起步体重", "\(Fmt.kg(profile.startWeightKilograms)) kg")
                 infoRow("当前体重", currentKilograms.map { "\(Fmt.kg($0)) kg" } ?? "还没记")
-                infoRow("目标体重", "\(Fmt.kg(profile.targetWeightKilograms)) kg")
                 infoRow("活动量", profile.activityValue.title)
 
                 if let budget = Persistence.shared.calorieBudget(for: profile, currentKilograms: currentKilograms) {
@@ -140,7 +199,7 @@ struct ProfileHomeView: View {
                             Label(template.autoFillTimeText, systemImage: "clock")
                                 .labelStyle(.titleAndIcon)
                                 .font(.caption2)
-                                .foregroundColor(Theme.success)
+                                .foregroundColor(.secondary)
                         }
                     }
                     .accessibilityElement(children: .combine)

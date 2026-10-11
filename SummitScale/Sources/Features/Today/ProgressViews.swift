@@ -66,7 +66,7 @@ struct MacroBar: View {
                 Spacer(minLength: 4)
                 Text("\(Fmt.grams(grams))")
                     .font(Theme.number(14, weight: .semibold))
-                    .foregroundColor(isOver ? Theme.warning : .primary)
+                    .foregroundColor(isOver ? Theme.accent : .primary)
                 Text("/ \(Fmt.grams(target)) g")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -77,7 +77,7 @@ struct MacroBar: View {
                     Capsule()
                         .fill(Theme.track)
                     Capsule()
-                        .fill(isOver ? Theme.warning : color)
+                        .fill(isOver ? Theme.accent : color)
                         .frame(width: max(0, geometry.size.width * progress))
                 }
             }
@@ -134,7 +134,7 @@ struct GoalProgressBar: View {
                 // 「目标 XX kg」在下面那排标尺已经印了一次，这里不再重复，只留还差多少。
                 Text(progress >= 1 ? "已达标" : "还差 \(Fmt.kg(abs(remaining))) kg")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundColor(progress >= 1 ? Theme.success : Theme.accent)
+                    .foregroundColor(Theme.accent)
             }
 
             GeometryReader { geometry in
