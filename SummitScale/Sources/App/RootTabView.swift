@@ -1,34 +1,7 @@
 import SwiftUI
 
 /// 右下角加号能开的三个入口。
-enum QuickAction: String, Identifiable, CaseIterable {
-    case food
-    case activity
-    case weight
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .food: return "记饮食"
-        case .activity: return "记运动"
-        case .weight: return "记体重"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .food: return "fork.knife"
-        case .activity: return "figure.walk"
-        case .weight: return "scalemass"
-        }
-    }
-}
-
-/// 三个主页面 + 一个全局加号。
-///
-/// 首页本来就会显示「今天吃了什么」，另一个 Tab 再叫「记录」纯属重复，
-/// 所以记录动作统一收进右下角加号，Tab 让给趋势和我的。
+/// 三个主页面，记录动作收在各页右上角菜单。
 struct RootTabView: View {
     @Environment(\.scenePhase) private var scenePhase
 
@@ -39,8 +12,6 @@ struct RootTabView: View {
     private var weights: FetchedResults<WeightEntry>
 
     @State private var selection = 0
-    @State private var quickAction: QuickAction?
-    @State private var isMenuOpen = false
     @State private var autoFillNotice: String?
     /// 到点、等着用户点头的套餐；非空就会弹确认框。
     @State private var pendingTemplates: [MealTemplate] = []
@@ -50,48 +21,18 @@ struct RootTabView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            TabView(selection: $selection) {
-                TodayView()
-                    .tabItem { Label("今日", systemImage: "flame.fill") }
-                    .tag(0)
+        TabView(selection: $selection) {
+            TodayView()
+                .tabItem { Label("今日", systemImage: "flame.fill") }
+                .tag(0)
 
-                TrendsView()
-                    .tabItem { Label("趋势", systemImage: "chart.xyaxis.line") }
-                    .tag(1)
+            TrendsView()
+                .tabItem { Label("趋势", systemImage: "chart.xyaxis.line") }
+                .tag(1)
 
-                ProfileHomeView()
-                    .tabItem { Label("我的", systemImage: "person.crop.circle") }
-                    .tag(2)
-            }
-
-            if isMenuOpen {
-                // 展开快捷记录时把整页压暗模糊，点空白处收起，避免误点到下面的卡片。
-                Rectangle()
-                    .fill(.ultraThinMaterial)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                            isMenuOpen = false
-                        }
-                    }
-            }
-
-            quickAdd
-                .padding(.trailing, 18)
-                .padding(.bottom, 62)
-        }
-        .sheet(item: $quickAction) { action in
-            switch action {
-            case .food:
-                AddFoodSheet()
-            case .activity:
-                ActivityEditorView(bodyKilograms: bodyKilograms)
-            case .weight:
-                AddWeightSheet(defaultKilograms: bodyKilograms)
-            }
+            ProfileHomeView()
+                .tabItem { Label("我的", systemImage: "person.crop.circle") }
+                .tag(2)
         }
         .confirmationDialog(
             autoFillPrompt,
@@ -135,58 +76,6 @@ struct RootTabView: View {
         .onChange(of: scenePhase) { phase in
             // 从后台回来也查一次，避免早上开了 App 晚上才补账。
             if phase == .active { checkAutoFill() }
-        }
-    }
-
-    // MARK: - 悬浮加号
-
-    private var quickAdd: some View {
-        VStack(alignment: .trailing, spacing: 12) {
-            if isMenuOpen {
-                ForEach(QuickAction.allCases) { action in
-                    Button {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                            isMenuOpen = false
-                        }
-                        quickAction = action
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(action.title)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundColor(.primary)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(.regularMaterial, in: Capsule())
-
-                            Image(systemName: action.symbol)
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(width: Theme.minTouch, height: Theme.minTouch)
-                                // 三个入口统一用主色，靠图标本身区分；旧版三色同屏太吵。
-                                .background(Theme.accent, in: Circle())
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(action.title)
-                    }
-                }
-                .transition(.scale(scale: 0.8, anchor: .bottomTrailing).combined(with: .opacity))
-            }
-
-            Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
-                    isMenuOpen.toggle()
-                }
-            } label: {
-                Image(systemName: isMenuOpen ? "xmark" : "plus")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(width: 56, height: 56)
-                    // 纯色足够：iOS 的悬浮按钮靠尺寸和位置立起来，不靠渐变与主色发光。
-                    // 旧版深色模式下那圈 accent 阴影会糊成一片脏边。
-                    .background(Theme.accent, in: Circle())
-                    .shadow(color: .black.opacity(0.16), radius: 8, y: 4)
-            }
-            .accessibilityLabel(isMenuOpen ? "收起快捷记录" : "打开快捷记录")
         }
     }
 

@@ -146,6 +146,7 @@ struct FoodThumb: View {
                 Image(imageName)
                     .resizable()
                     .scaledToFill()
+                    .frame(width: size, height: size)
             } else if let urlString = urlString, let url = URL(string: urlString) {
                 AsyncImage(url: url) { phase in
                     switch phase {
@@ -153,6 +154,7 @@ struct FoodThumb: View {
                         image
                             .resizable()
                             .scaledToFill()
+                            .frame(width: size, height: size)
                     case .failure:
                         placeholder
                     default:
@@ -161,6 +163,7 @@ struct FoodThumb: View {
                             .background(Color(uiColor: .tertiarySystemGroupedBackground))
                     }
                 }
+                .frame(width: size, height: size)
             } else {
                 placeholder
             }

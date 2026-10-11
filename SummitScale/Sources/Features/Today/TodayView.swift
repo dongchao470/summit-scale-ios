@@ -29,6 +29,7 @@ struct TodayView: View {
 
     @State private var showFoodSheet = false
     @State private var showActivitySheet = false
+    @State private var showWeightSheet = false
     @State private var showProfileSheet = false
     @State private var presetMeal: MealType?
     /// 「补记昨天」打开记饮食时用的日期；普通新增保持 nil，走今天。
@@ -118,7 +119,7 @@ struct TodayView: View {
                 Section { activityCard }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("今天")
+            .navigationTitle(greetingTitle)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     recordMenu
@@ -144,6 +145,9 @@ struct TodayView: View {
             }
             .sheet(isPresented: $showActivitySheet) {
                 ActivityEditorView(bodyKilograms: latestWeight?.kilograms ?? profile?.startWeightKilograms ?? 60)
+            }
+            .sheet(isPresented: $showWeightSheet) {
+                AddWeightSheet(defaultKilograms: latestWeight?.kilograms ?? 60)
             }
             .sheet(isPresented: $showProfileSheet) {
                 ProfileEditorView()
@@ -359,6 +363,18 @@ struct TodayView: View {
                     }
                 }
             }
+            Section {
+                Button {
+                    showActivitySheet = true
+                } label: {
+                    Label("记运动", systemImage: "figure.walk")
+                }
+                Button {
+                    showWeightSheet = true
+                } label: {
+                    Label("记体重", systemImage: "scalemass")
+                }
+            }
         } label: {
             Image(systemName: "plus.circle.fill")
         }
@@ -521,10 +537,12 @@ struct TodayView: View {
     }
 
     private func toggleGroup(_ id: String) {
-        if expandedGroups.contains(id) {
-            expandedGroups.remove(id)
-        } else {
-            expandedGroups.insert(id)
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            if expandedGroups.contains(id) {
+                expandedGroups.remove(id)
+            } else {
+                expandedGroups.insert(id)
+            }
         }
     }
 
@@ -581,12 +599,14 @@ struct TodayView: View {
                 Button {
                     showActivitySheet = true
                 } label: {
-                    Label("加一条", systemImage: "plus")
-                        .font(.footnote.weight(.semibold))
-                        .frame(minHeight: 32)
+                    Image(systemName: "plus.circle.fill")
+                        .font(.body)
+                        .foregroundColor(Theme.accent)
+                        .frame(minWidth: 36, minHeight: 30)
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.bordered)
-                .tint(Theme.accent)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("加一条运动")
             }
 
             if todayActivities.isEmpty {

@@ -431,47 +431,50 @@ struct TrendsView: View {
             }
         }
 
-        /// 按星期把连续的日子切成周列，前面补空格好让首格落在正确的星期行。
+        /// 周列视图数据：每列是该周日一到日（按系统首日）的 7 格，空缺为 nil。
         private var columns: [[DayValue?]] {
             let calendar = Calendar.current
-            guard let first = days.first else { return [] }
-            let lead = (calendar.component(.weekday, from: first.day) - calendar.firstWeekday + 7) % 7
-
-            var result: [[DayValue?]] = []
-            var current: [DayValue?] = Array(repeating: nil, count: lead)
+            // 按日期定位周偏移，缺日自动留空，不再依赖「连续日子」假设。
+            var byWeek: [Int: [DayValue?]] = [:]
+            let base = calendar.dateInterval(of: .weekOfYear, for: calendar.startOfDay(for: Date())).map {
+                calendar.startOfDay(for: $0.start)
+            } ?? Date()
             for day in days {
-                if current.count == 7 {
-                    result.append(current)
-                    current = []
-                }
-                current.append(day)
+                let start = calendar.startOfDay(for: day.day)
+                let weekOffset = calendar.dateComponents([.weekOfYear], from: base, to: start).weekOfYear ?? 0
+                let slot = (calendar.component(.weekday, from: start) - calendar.firstWeekday + 7) % 7
+                byWeek[weekOffset, default: Array(repeating: nil, count: 7)][slot] = day
             }
-            if !current.isEmpty {
-                while current.count < 7 { current.append(nil) }
-                result.append(current)
-            }
-            return result
+            let maxWeek = byWeek.keys.max() ?? 0
+            let minWeek = min(0, byWeek.keys.min() ?? 0)
+            return (minWeek...maxWeek).map { byWeek[$0] ?? Array(repeating: nil, count: 7) }
         }
 
         var body: some View {
             let cols = max(columns.count, 1)
             let gap: CGFloat = 3
-            let maxWidth: CGFloat = 330
-            let size = min(22, max(10, (maxWidth - CGFloat(cols - 1) * gap) / CGFloat(cols)))
-
-            HStack(alignment: .top, spacing: gap) {
-                ForEach(columns.indices, id: \.self) { c in
-                    VStack(spacing: gap) {
-                        ForEach(0..<7, id: \.self) { r in
-                            let cell = columns[c][r]
-                            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                .fill(cell == nil ? Color.clear : RecordHeatmap.color(for: level(for: cell!.value)))
-                                .frame(width: size, height: size)
+            // 行宽交给布局系统量，别用写死的 330——在不同屏宽的 List 行里会溢出错位。
+            GeometryReader { geo in
+                let size = max(10, min(22, (geo.size.width - CGFloat(cols - 1) * gap) / CGFloat(cols)))
+                HStack(alignment: .top, spacing: gap) {
+                    ForEach(columns.indices, id: \.self) { c in
+                        VStack(spacing: gap) {
+                            ForEach(0..<7, id: \.self) { r in
+                                let cell = columns[c][r]
+                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                    .fill(cell == nil ? Color.clear : RecordHeatmap.color(for: level(for: cell!.value)))
+                                    .frame(width: size, height: size)
+                                    .opacity(cell == nil ? 0 : 1)
+                                    .scaleEffect(cell == nil ? 0.5 : 1)
+                                    .animation(.spring(response: 0.35, dampingFraction: 0.75)
+                                        .delay(Double(c * 7 + r) * 0.01), value: cell?.value)
+                            }
                         }
                     }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
             }
+            .frame(height: 7 * 22 + 6 * 3)
         }
     }
 }
