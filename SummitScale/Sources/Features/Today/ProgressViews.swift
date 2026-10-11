@@ -48,6 +48,9 @@ struct MacroBar: View {
     let target: Double
     let color: Color
 
+    /// 进度条绘制动画开关，onAppear 置 true，由 0 缓动展开到当前比例。
+    @State private var animate = false
+
     private var progress: Double {
         guard target > 0 else { return 0 }
         return min(1, max(0, grams / target))
@@ -66,7 +69,7 @@ struct MacroBar: View {
                 Spacer(minLength: 4)
                 Text("\(Fmt.grams(grams))")
                     .font(Theme.number(14, weight: .semibold))
-                    .foregroundColor(isOver ? Theme.accent : .primary)
+                    .foregroundColor(isOver ? Theme.warning : .primary)
                 Text("/ \(Fmt.grams(target)) g")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -77,11 +80,13 @@ struct MacroBar: View {
                     Capsule()
                         .fill(Theme.track)
                     Capsule()
-                        .fill(isOver ? Theme.accent : color)
-                        .frame(width: max(0, geometry.size.width * progress))
+                        .fill(isOver ? Theme.warning : color)
+                        .frame(width: animate ? max(0, geometry.size.width * progress) : 0)
+                        .animation(.easeOut(duration: 1.0).delay(0.1), value: animate)
                 }
             }
             .frame(height: 8)
+            .onAppear { animate = true }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title)，已摄入 \(Fmt.grams(grams)) 克，目标 \(Fmt.grams(target)) 克")
@@ -97,10 +102,10 @@ struct MacroPanel: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            // 三条统一走强调色，靠左侧名称区分，不再红橙蓝三色同屏；超支由 MacroBar 内部转红。
-            MacroBar(title: "蛋白质", grams: protein, target: budget.macros.protein, color: Theme.accent)
-            MacroBar(title: "碳水", grams: carbs, target: budget.macros.carbs, color: Theme.accent)
-            MacroBar(title: "脂肪", grams: fat, target: budget.macros.fat, color: Theme.accent)
+            // 三条按健身环三色区分：蛋白青、碳水黄绿、脂肪红；超支时由 MacroBar 内部转红警示。
+            MacroBar(title: "蛋白质", grams: protein, target: budget.macros.protein, color: Theme.protein)
+            MacroBar(title: "碳水", grams: carbs, target: budget.macros.carbs, color: Theme.carbs)
+            MacroBar(title: "脂肪", grams: fat, target: budget.macros.fat, color: Theme.fat)
         }
     }
 }
@@ -110,6 +115,9 @@ struct GoalProgressBar: View {
     let current: Double
     let start: Double
     let target: Double
+
+    /// 进度条绘制动画开关。
+    @State private var animate = false
 
     private var remaining: Double { current - target }
 
@@ -144,10 +152,12 @@ struct GoalProgressBar: View {
                         .fill(Theme.track)
                     Capsule()
                         .fill(Theme.accent)
-                        .frame(width: max(0, geometry.size.width * progress))
+                        .frame(width: animate ? max(0, geometry.size.width * progress) : 0)
+                        .animation(.easeOut(duration: 1.0).delay(0.1), value: animate)
                 }
             }
             .frame(height: 8)
+            .onAppear { animate = true }
 
             HStack {
                 Text("起点 \(Fmt.kg(start)) kg")

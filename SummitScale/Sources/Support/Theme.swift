@@ -12,9 +12,9 @@ import SwiftUI
 enum Theme {
     // MARK: - 强调色
 
-    /// 全 App 唯一强调色：玫红。直接用系统 pink（浅 #FF2D55 / 深 #FF375F），
-    /// 自动跟随深浅模式与「增强对比度」，比自己写死 RGB 更稳。
-    static let accent = Color(uiColor: .systemPink)
+    /// 全 App 唯一强调色：系统蓝（浅 #007AFF / 深 #0A84FF），
+    /// 自动跟随深浅模式与「增强对比度」。用在主按钮、热量环填充、选中态。
+    static let accent = Color(uiColor: .systemBlue)
 
     // MARK: - 状态色
 
@@ -25,11 +25,19 @@ enum Theme {
 
     // MARK: - 营养素三色
 
-    /// 蛋白 / 碳水 / 脂肪三色。仅用于图例圆点与进度条填充，
-    /// 配套文字一律用 primaryText / secondaryText，避免彩色文字堆叠。
-    static let protein = Color(uiColor: .systemPink)
-    static let carbs = Color(uiColor: .systemOrange)
-    static let fat = Color(uiColor: .systemBlue)
+    /// 蛋白 / 碳水 / 脂肪三色，对齐 Apple 健身三环（活动红 / 运动黄绿 / 站立青）。
+    /// 按用户要求定成：蛋白青、碳水黄绿、脂肪红。各给浅/深两套 RGB——
+    /// 深色下提亮到荧光，浅色下压暗以保证白底可读。仅用于进度条填充与图例圆点。
+    static let protein = dynamic(light: 0x00B8C9, dark: 0x2CE0F0)
+    static let carbs = dynamic(light: 0x7FBF00, dark: 0xA2F10A)
+    static let fat = dynamic(light: 0xFA114F, dark: 0xFF2D55)
+
+    /// 按浅 / 深模式取不同 16 进制色；健身环荧光色需分别调校，系统语义色无法表达。
+    private static func dynamic(light: Int, dark: Int) -> Color {
+        Color(uiColor: UIColor { trait in
+            trait.userInterfaceStyle == .dark ? UIColor(rgb: dark) : UIColor(rgb: light)
+        })
+    }
 
     // MARK: - 文字与分隔
 
@@ -102,5 +110,17 @@ struct CardTitle: View {
 extension View {
     func card(padding: CGFloat = Theme.cardPadding) -> some View {
         modifier(CardModifier(padding: padding))
+    }
+}
+
+/// 把 0xRRGGBB 整数拆成 UIColor，供健身环三色的浅/深两套硬编码使用。
+private extension UIColor {
+    convenience init(rgb: Int) {
+        self.init(
+            red: CGFloat((rgb >> 16) & 0xFF) / 255,
+            green: CGFloat((rgb >> 8) & 0xFF) / 255,
+            blue: CGFloat(rgb & 0xFF) / 255,
+            alpha: 1
+        )
     }
 }

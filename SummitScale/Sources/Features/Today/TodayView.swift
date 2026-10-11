@@ -41,6 +41,8 @@ struct TodayView: View {
     @State private var filledMessage: String?
     /// 已经展开明细的套餐组；键是 `template:<套餐UUID>`。
     @State private var expandedGroups: Set<String> = []
+    /// 顶部热量环的绘制动画开关，onAppear 置 true，由 0 扫到当前百分比。
+    @State private var ringAnimate = false
 
     // MARK: - 派生数据
 
@@ -238,9 +240,10 @@ struct TodayView: View {
             Circle()
                 .stroke(Color(.systemGray5), lineWidth: 9)
             Circle()
-                .trim(from: 0, to: progress)
+                .trim(from: 0, to: ringAnimate ? progress : 0)
                 .stroke(Theme.accent, style: StrokeStyle(lineWidth: 9, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .animation(.easeOut(duration: 1.1), value: ringAnimate)
             VStack(spacing: 1) {
                 Text("\(Int((ledger.progress * 100).rounded()))%")
                     .font(Theme.number(18, weight: .semibold))
@@ -253,6 +256,7 @@ struct TodayView: View {
         .frame(width: 86, height: 86)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("已摄入占目标 \(Int((ledger.progress * 100).rounded())) 个百分点")
+        .onAppear { ringAnimate = true }
     }
 
     // MARK: - 档案缺失

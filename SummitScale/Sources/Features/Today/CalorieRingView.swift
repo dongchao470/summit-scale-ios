@@ -4,6 +4,9 @@ import SwiftUI
 struct CalorieRingView: View {
     let ledger: DayLedger
 
+    /// 进度环的绘制动画开关，onAppear 置 true 触发一次由 0 扫到当前比例。
+    @State private var animate = false
+
     private var isOver: Bool { ledger.remainingKcal < 0 }
 
     var body: some View {
@@ -15,6 +18,7 @@ struct CalorieRingView: View {
         .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText)
+        .onAppear { animate = true }
     }
 
     private var ring: some View {
@@ -23,12 +27,13 @@ struct CalorieRingView: View {
                 .stroke(Theme.accent.opacity(0.15), lineWidth: 12)
 
             Circle()
-                .trim(from: 0, to: min(1, max(0, ledger.progress)))
+                .trim(from: 0, to: animate ? min(1, max(0, ledger.progress)) : 0)
                 .stroke(
                     isOver ? Theme.warning : Theme.accent,
                     style: StrokeStyle(lineWidth: 12, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
+                .animation(.easeOut(duration: 1.1), value: animate)
 
             VStack(spacing: 1) {
                 Text(Fmt.kcal(abs(ledger.remainingKcal)))
