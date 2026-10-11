@@ -254,5 +254,14 @@ v0.3.3 删掉重名条目 `latte` 后把它的图改挂过去时撞出来的）�
 `AddFoodSheet` / `TemplateEditorView` 两处。
 
 **验证**：`verify_food.py`、`verify_autofill.py`、`verify_images.py` 本地退出码 0；
-配图资源 434/434 齐备。**未做真机验证** —— 需用户安装后确认饮食库能进、图片显示正常、
-断网时仍有图、无图条目的分类图标不空白。
+配图资源 434/434 齐备；GitHub Actions `92fd9829` 编译通过，产出的 IPA 里
+`Assets.car` 为 6.07 MB、整包从 742 KB 涨到 6.36 MB，说明图确实进了包而不是只改了个字段名。
+**未做真机验证** —— 需用户安装后确认饮食库能进、图片显示正常、断网时仍有图、
+无图条目的分类图标不空白。
+
+**过程中踩的两个坑**（都靠 CI 暴露，本地无 Swift 工具链拦不住）：
+1. 第一版把今日页写成 `FoodCategorySymbol.symbol(for: entry.category)`，编译报
+   `value of type 'FoodEntry' has no member 'category'` —— `FoodEntry` 根本没存分类。
+   改成 `FoodLibrary.bestMatch(entry.name)?.category ?? ""` 按名字反查。
+2. XcodeGen 生成的 Info.plist 与 `project.yml` 里的版本号是两处，改版本必须同时改，
+   否则产出的 IPA 名字还是旧版本（v0.3.3 时已经踩过一次）。
