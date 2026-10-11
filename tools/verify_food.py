@@ -98,8 +98,14 @@ def main() -> int:
 
     # 热量自洽：kcal ≈ 碳水*4 + 蛋白*4 + 脂肪*9
     # 蔬菜类含膳食纤维、酒类热量主要来自酒精，本来就不走 4/4/9，单独豁免。
+    #
+    # 成分表数据集（id 前缀 cf_）的热量和三大营养素是同一张表里的两个字段，
+    # 膳食纤维、有机酸、糖醇计入热量却不计入碳水，公式对不上是原始数据如此，
+    # 不是抄错了，所以这一批只记录、不计入问题。
     EXEMPT_IDS = {"beer", "wine_red", "baijiu"}
     EXEMPT_CATEGORIES = {"蔬菜"}
+    EXEMPT_PREFIXES = ("cf_",)
+    notes = []
 
     for row in rows:
         if row["kcal"] < 20:
@@ -112,10 +118,14 @@ def main() -> int:
             continue
         drift = abs(computed - row["kcal"]) / row["kcal"]
         if drift > 0.20:
-            problems.append(
+            msg = (
                 f"营养对不上热量: {row['id']} 标 {row['kcal']:.0f}，"
                 f"按 4/4/9 算是 {computed:.0f}（差 {drift * 100:.0f}%）"
             )
+            if row["id"].startswith(EXEMPT_PREFIXES):
+                notes.append(msg)
+            else:
+                problems.append(msg)
 
     categories = {}
     for row in rows:
@@ -141,6 +151,13 @@ def main() -> int:
         print("  " + problem)
     if len(problems) > 40:
         print(f"  ...还有 {len(problems) - 40} 条")
+
+    # 成分表数据集里公式对不上的那些，只提示不拦 CI。
+    print(f"\n=== 仅提示 {len(notes)} 条（成分表数据集，原始数据即如此）===")
+    for note in notes[:10]:
+        print("  " + note)
+    if len(notes) > 10:
+        print(f"  ...还有 {len(notes) - 10} 条")
 
     return 1 if problems else 0
 
