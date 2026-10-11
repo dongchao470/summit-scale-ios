@@ -392,3 +392,102 @@ Info.plist 的 `CFBundleShortVersionString` / `CFBundleVersion` 是**两处**，
 
 **已知遗留**：套餐「改完再记」里新加或改过的条目会写 `protein/carbs/fat = 0`
 （清单只编辑名称、份量、热量），后续若要四项齐全得再补。
+
+---
+
+## 9. v0.4.2（2026-10-11）强调色换玫红 + 今天页改系统原生分组
+
+### 用户诉求（原话）
+
+> 那个今天吃什么，那个地方设计的太丑，没必要显示标准套餐按钮，重新设计吧，你这个太多都是自绘的吧
+
+加上先前 `ask_user` 定下的两条：强调色选 6 号玫红 `#FF2D55`；**所有卡片图标统一用强调色**。
+
+### 改了什么
+
+**配色 —— `Sources/Support/Theme.swift`**
+
+- `Theme.accent` 由深浅双版自定义 UIColor 闭包（浅 `#0A8575` 墨青绿 / 深 `#31CCB8`）
+  换成 `Color(uiColor: .systemPink)`。浅色 `#FF2D55`、深色 `#FF375F`，
+  自动跟随深浅模式与「增强对比度」。
+- `CardTitle` 的图标由 `Theme.secondaryText` 改为 `Theme.accent`。
+  全 App 共 11 处 `CardTitle`（TrendsView 4 / TodayView 4 / ProfileHomeView 3），
+  改这一处全部生效。
+
+**今天页 —— `Sources/Features/Today/TodayView.swift`，703 → 655 行**
+
+| 旧 | 新 |
+| --- | --- |
+| `ScrollView` + `VStack` 堆 6 张 `.card()` 手绘卡片 | `List` + `Section` + `.listStyle(.insetGrouped)` |
+| 卡片标题行挤「补记昨天」+「加一条」两个按钮 | 两个入口收进右上角 toolbar 菜单 `recordMenu` |
+| 餐次自绘 `VStack` 标题行 | 每个餐次一个 `Section`，餐次名当分组标题，右侧小加号 |
+| 套餐按钮常驻在餐次行 | 拿掉常驻按钮，挪进 `recordMenu` 的「套用套餐」分区 |
+| 食物行右侧挂 `ellipsis` 菜单 | 左滑改 / 删（`swipeActions`） |
+| `singleIndent = 26` / `groupIndent = 46` 两级手写缩进 | 系统分组自带缩进，两个常量删除 |
+| 套餐组图标铺 12% 淡底圆角块 | 去掉淡底，只留强调色图标 |
+| 每张卡片外套 `.card()` | 全部拆除 —— `List` 分组自带白底圆角，再套一层是双层边框 |
+
+### 验证证据
+
+**本地核查（execution_id 55 / 56 / 57）**
+
+- TodayView 里 `.card()` 零残留；`singleIndent` / `groupIndent` 全项目零残留；
+  `ellipsis` 零残留；`foodCard` 零残留；`ScrollView` 只剩一行注释。
+- `foodRow` 三处调用全部为无缩进参数版本。
+- 新结构到位：`List` / `Section` / `.listStyle(.insetGrouped)` / `.toolbar` /
+  `recordMenu` / `swipeActions` 均在位。
+- 括号配平 OK。
+- 全项目扫图标用色：`Theme.secondaryText` 只剩 `TemplateFillSheet` 三处，
+  且都是「合计 / 克 / 千卡」的文字色，**没有漏改的卡片图标**。
+
+**云编译**
+
+- run 31 / sha `075dddeb` → success，但产物名还是 `SummitScale-0.4.1-build12-unsigned.ipa`。
+- **踩坑（写死记性）**：`project.yml` 里有**两处**版本号 ——
+  `targets.SummitScale.settings.base.MARKETING_VERSION`
+  和 `targets.SummitScale.info.properties.CFBundleShortVersionString`。
+  **后者覆盖前者**，XcodeGen 直接拿 `info.properties` 生成 Info.plist。
+  只改 `MARKETING_VERSION` 等于白改，两处都改才算数。
+- run 32 / sha `5e0e814` → success，产物 `SummitScale-0.4.2-build13-unsigned.ipa`
+  6359767 字节，sha256 `5e4eb8bc…`。
+- 包内 Info.plist：`0.4.2` / `13` / MinOS `16.0` / bundle id `com.dongchao470.summit-scale`。
+
+**入包核验 —— 这次改用对照法**
+
+第一次拿中文文案当探针，`grep` 全部命中 0，连「删除」这种常用词都是 0。
+原因就是第 8 节记的那条：≤15 字节的 Swift `String` 字面量走 small-string 内联，
+字节被拆进 `movz` / `movk` 立即数，**连续字节序列在文件里根本不存在**，
+`strings` 和字节搜索都看不见。
+
+改成下载 build 12 的产物当对照（artifact `11702900309`，确认版本 `0.4.1` / `12`）：
+
+| 探针 | 字节数 | build 12 | build 13 | 期望 | 结论 |
+| --- | --- | --- | --- | --- | --- |
+| `今天吃了什么` | 18 | 1 | 0 | 旧卡片标题消失 | PASS |
+| `calendar.badge.minus` | 20 | 0 | 1 | 新菜单图标出现 | PASS |
+| `fork.knife.circle` | 17 | 1 | 0 | 旧卡片图标名消失 | PASS |
+| `wand.and.stars` | 14 | 0 | 0 | 内联，无参考价值 | 弃用 |
+
+二进制：build 12 `3126928` 字节 → build 13 `3067760` 字节，减少 `59168` 字节，
+与净删除 50 行（-183 / +133）相符。
+
+**探针选择规则**：必须挑 **> 15 字节**的静态字面量。中文每字 3 字节，
+所以中文至少 6 个字（18 字节）才可靠；纯 ASCII 至少 16 个字符。
+
+### 未做真机验证
+
+本地没有 Xcode / clang，视觉验收只能等用户装机。需要确认：
+
+1. 首页是不是系统分组外观，白底圆角、分组之间有间距；
+2. 餐次标题右边的小加号点得动，且默认落到那一餐；
+3. 食物行左滑能出「删除」和「改这条」；
+4. 右上角 `+` 菜单里的「补记昨天」「套用套餐」还能用；
+5. 强调色是不是玫红，深浅模式下都读得清。
+
+### 已知遗留
+
+- `TrendsView` / `ProfileHomeView` 还是老的 `ScrollView` + `.card()` 手绘卡片
+  （共 7 处 `.card()`）。用户那句「太多都是自绘的」如果也包括这两页，
+  需要下一轮再改。
+- 套餐「改完再记」新增 / 改过的条目 `protein/carbs/fat = 0`（v0.4.1 遗留，本轮未动）。
+- 本轮未触碰 `FoodImages.map`，饮食库崩溃问题用户未再报告。
