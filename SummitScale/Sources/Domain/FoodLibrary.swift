@@ -16,8 +16,8 @@ struct FoodItem: Identifiable, Hashable {
 
     /// 打包进 App 的配图资源名。
     ///
-    /// 本地库本身不带图，靠 FoodImages 里按 id 查；成分表那批食材没配图，
-    /// 查不到就返回 nil，列表按分类退回 SF Symbol，不会留空白。
+    /// 本地库本身不带图。0.3.5 起图打包进 App，资源名由 FoodImages 拼出来；
+    /// 成分表那批食材没配图，UIImage(named:) 会返回 nil，列表按分类退回 SF Symbol。
     var imageName: String? { FoodImages.assetName(for: id) }
 
     /// 按克数换算这一份的热量。

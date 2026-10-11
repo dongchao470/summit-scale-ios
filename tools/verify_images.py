@@ -1,17 +1,22 @@
-"""校验配图索引。
+"""校验配图。
 
 0.3.4 build 7 点「饮食库」必崩，栈是
-FoodItem.imageURL.getter -> one-time initialization function for map -> dictionaryLiteral，
-根因是 FoodImages.map 那个 400 多项的字典字面量在标准库的 dictionaryLiteral 里 trap
-（编译期不报错，运行期直接 EXC_BREAKPOINT）。0.3.5 build 8 换成 Set 字面量后照崩，
-所以 0.3.6 改成「字符串常量 + 运行期切分」，彻底不碰字面量构造那条路径。
+  FoodItem 的图字段 getter -> 配图表的一次性初始化 -> dictionaryLiteral
+  -> EXC_BREAKPOINT / SIGTRAP
+0.3.5 build 8 换成 Set 字面量后照崩，而且把 434 个 id 拿去实测（见
+tools/repro_dictionary_trap.swift 与 CI 的 Diagnose dictionary literal 步骤），
+字典字面量本身并不 trap —— 也就是说根因在别处，只是恰好落在配图表初始化那条路上。
+
+所以 0.3.6 起配图索引不再有名单：FoodImages.assetName(for:) 直接拼资源名，
+有没有图交给 UIImage(named:) 回答。没有静态存储，就没有初始化可崩。
 
 这个脚本守着三件事：
-1. 配图索引不许再写成字典/集合字面量（第一条检查）；
-2. id 唯一，且每个 id 都有对应的打包资源，少一个在真机上就是静默空白；
-3. 顺手报一下覆盖率，别再说错「多少条有图」。
+1. FoodImages 不许再出现任何 static let / static var（第一条检查，回归守卫）；
+2. 每个 imageset 有 jpg 与 Contents.json，且目录名是 food_<id>；
+3. 报覆盖率：Assets 里有多少张图、对应多少个食物条目。
 """
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -32,62 +37,54 @@ LIBRARY_FILES = [
 ]
 
 ROW = re.compile(r"^\s*([A-Za-z0-9_]+)\|([^|]+)\|([^|]+)\|")
-IDLIST = re.compile(
-    r"private\s+static\s+let\s+idList\s*=\s*\"\"\"\n(.*?)\n\s*\"\"\"", re.S
-)
-# 字典字面量的行，形如 "key": "value",
-LITERAL_ROW = re.compile(r'^\s*"((?:[^"\\]|\\.)*)"\s*:', re.M)
+STATIC_STORAGE = re.compile(r"^\s*(?:private\s+|fileprivate\s+)?static\s+(?:let|var)\s", re.M)
 
 
 def main():
     problems = []
-    text = IMAGES.read_text(encoding="utf-8")
 
-    # 1. 不许再用字面量构造
-    stale = LITERAL_ROW.findall(text)
-    if stale:
+    # 1. 回归守卫：配图索引里不许再有静态存储
+    text = IMAGES.read_text(encoding="utf-8")
+    storage = STATIC_STORAGE.findall(text)
+    if storage:
         problems.append(
-            f"配图索引又写成字面量了（{len(stale)} 行，例如 {stale[:3]}）。"
-            "大块字面量会在真机上 trap，必须留在 idList 字符串里。"
+            f"FoodImages 又出现了静态存储（{len(storage)} 处）。"
+            "那会带来一次性初始化，而两次真机崩溃就崩在那条路上。"
         )
 
-    # 2. 解析 idList
-    m = IDLIST.search(text)
-    if not m:
-        problems.append("没能从 FoodImages.swift 解析出 idList，格式变了？")
-        ids = []
-    else:
-        ids = m.group(1).split()
-    idset = set(ids)
-
-    seen = {}
-    for index, key in enumerate(ids):
-        if key in seen:
-            problems.append(f'配图 id 重复："{key}"（第 {seen[key] + 1} 次与第 {index + 1} 次）')
-        seen.setdefault(key, index)
-
-    # 3. id 与打包资源一一对应
+    # 2. Assets 目录
     if not ASSETS.is_dir():
         problems.append(f"配图资源目录不存在：{ASSETS}")
-    else:
-        missing = []
-        for key in sorted(idset):
-            imageset = ASSETS / ("food_" + key + ".imageset")
-            jpg = imageset / (key + ".jpg")
-            if not imageset.is_dir() or not jpg.is_file():
-                missing.append(key)
-        if missing:
-            problems.append(
-                f"{len(missing)} 个 id 缺少打包资源，例如：{missing[:5]}"
-            )
-        else:
-            on_disk = {p.name[len("food_"):-len(".imageset")]
-                       for p in ASSETS.glob("food_*.imageset")}
-            extra = sorted(on_disk - idset)
-            if extra:
-                problems.append(f"{len(extra)} 个 imageset 没有对应 id，例如：{extra[:5]}")
+        return report([], problems)
 
-    # 4. 全库条目与覆盖率
+    imagesets = sorted(ASSETS.glob("food_*.imageset"))
+    ids = []
+    for imageset in imagesets:
+        name = imageset.name
+        if not name.startswith("food_") or not name.endswith(".imageset"):
+            problems.append(f"资源目录命名不合规：{name}")
+            continue
+        key = name[len("food_"):-len(".imageset")]
+        ids.append(key)
+
+        manifest = imageset / "Contents.json"
+        if not manifest.is_file():
+            problems.append(f"{name} 缺 Contents.json")
+        else:
+            try:
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+                if not data.get("images"):
+                    problems.append(f"{name} 的 Contents.json 里没有 images 项")
+            except json.JSONDecodeError as exc:
+                problems.append(f"{name} 的 Contents.json 不是合法 JSON：{exc}")
+
+        pictures = [p for p in imageset.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png")]
+        if not pictures:
+            problems.append(f"{name} 里没有图片文件")
+        elif not (imageset / (key + ".jpg")).is_file() and not (imageset / (key + ".png")).is_file():
+            problems.append(f"{name} 的图片文件名与 id 对不上：{[p.name for p in pictures]}")
+
+    # 3. 食物库条目
     items = []
     for name in LIBRARY_FILES:
         path = SRC / name
@@ -99,28 +96,27 @@ def main():
             if row:
                 items.append((row.group(1), row.group(2).strip(), name))
 
+    idset = set(ids)
     by_id = [i for i in items if i[0] in idset]
-    dangling = sorted(idset - {i[0] for i in items})
+    orphans = sorted(idset - {i[0] for i in items})
 
-    print(f"配图 id: {len(ids)}（唯一 {len(idset)}）")
-    print(f"打包资源: {ASSETS}")
-    print(f"食物库条目: {len(items)}")
-    print(f"按 id 命中的条目: {len(by_id)}")
-    if items:
-        print(f"覆盖率: {len(by_id) / len(items) * 100:.1f}%")
+    if orphans:
+        # 只提示：删条目时容易忘记摘图，不影响运行。
+        print(f"注意：{len(orphans)} 张图对应的条目已不在库里：{orphans[:8]}")
 
-    if dangling:
-        # 只提示：有些图挂在历史 id 上，删条目时忘了摘图，不影响运行。
-        print(f"\n注意：{len(dangling)} 个配图 id 在库里找不到对应条目")
-        for key in dangling[:10]:
-            print("  " + key)
-        if len(dangling) > 10:
-            print(f"  ...还有 {len(dangling) - 10} 个")
+    return report(ids, problems, items, by_id)
 
+
+def report(ids, problems, items=None, by_id=None):
+    print(f"打包配图: {len(ids)} 张")
+    if items is not None:
+        print(f"食物库条目: {len(items)}")
+        print(f"其中配了图的: {len(by_id)}")
+        if items:
+            print(f"覆盖率: {len(by_id) / len(items) * 100:.1f}%")
     print(f"\n=== 问题 {len(problems)} 条 ===")
     for problem in problems[:20]:
         print("  " + problem)
-
     return 1 if problems else 0
 
 
