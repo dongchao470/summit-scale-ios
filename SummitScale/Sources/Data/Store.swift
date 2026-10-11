@@ -173,6 +173,26 @@ extension Persistence {
         return entry
     }
 
+    /// 就地改一条饮食记录。
+    ///
+    /// 只动传进来的这几项，配图、来源和外部 id 原样保留，
+    /// 免得编辑一次把图和去重信息弄丢。
+    func updateFood(
+        _ entry: FoodEntry,
+        name: String,
+        meal: MealType,
+        grams: Double,
+        kcal: Double,
+        date: Date
+    ) {
+        entry.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        entry.mealType = meal.rawValue
+        entry.grams = grams
+        entry.kcal = kcal
+        entry.date = date
+        save()
+    }
+
     // MARK: - 活动
 
     @discardableResult

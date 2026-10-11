@@ -44,10 +44,35 @@ struct AddFoodSheet: View {
         }
     }
 
-    init(defaultMeal: MealType = AddFoodSheet.suggestedMeal()) {
-        _meal = State(initialValue: defaultMeal)
+    /// 非空表示在编辑这条已有记录：保存时回写，不新建。
+    private let editingEntry: FoodEntry?
+
+    /// - Parameters:
+    ///   - defaultMeal: 打开时预选的餐次。
+    ///   - date: 记到哪一天，默认今天；「补记昨天」会传昨天的日期。
+    ///   - editing: 传了就是编辑这条已有记录，而不是新增。
+    init(
+        defaultMeal: MealType = AddFoodSheet.suggestedMeal(),
+        date: Date = Date(),
+        editing entry: FoodEntry? = nil
+    ) {
+        self.editingEntry = entry
+        _meal = State(initialValue: entry?.mealValue ?? defaultMeal)
         _grams = State(initialValue: 100)
         _gramsText = State(initialValue: "100")
+        _date = State(initialValue: date)
+        if let entry = entry {
+            // 已有记录当成手填条目来改：名称、热量、份量都能动。
+            // 图片、来源、外部 id 一律不碰，免得编辑一次把配图弄丢。
+            _isManual = State(initialValue: true)
+            _manualName = State(initialValue: entry.name)
+            _manualKcalText = State(
+                initialValue: entry.kcal > 0 ? String(Int(entry.kcal.rounded())) : ""
+            )
+            _manualGramsText = State(
+                initialValue: entry.grams > 0 ? Fmt.grams(entry.grams) : ""
+            )
+        }
     }
 
     private var manualKcal: Double {
@@ -119,7 +144,7 @@ struct AddFoodSheet: View {
                     Toggle("直接输热量", isOn: $isManual.animation())
                 }
             }
-            .navigationTitle("记饮食")
+            .navigationTitle(editingEntry == nil ? "记饮食" : "改这条")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -311,6 +336,21 @@ struct AddFoodSheet: View {
 
     private func save() {
         let store = Persistence.shared
+
+        // 编辑已有记录：只回写这一条，不新建，配图和来源原样保留。
+        if let entry = editingEntry {
+            store.updateFood(
+                entry,
+                name: manualName,
+                meal: meal,
+                grams: manualGrams,
+                kcal: manualKcal,
+                date: date
+            )
+            dismiss()
+            return
+        }
+
         if isManual {
             store.addFood(
                 name: manualName.trimmingCharacters(in: .whitespacesAndNewlines),

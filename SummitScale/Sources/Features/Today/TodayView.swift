@@ -31,6 +31,12 @@ struct TodayView: View {
     @State private var showActivitySheet = false
     @State private var showProfileSheet = false
     @State private var presetMeal: MealType?
+    /// 「补记昨天」打开记饮食时用的日期；普通新增保持 nil，走今天。
+    @State private var presetDate: Date?
+    /// 正在改的那一条；非空就弹编辑页。
+    @State private var editingFood: FoodEntry?
+    /// 提醒里选了「改完再记」的套餐；非空就弹摊开编辑页。
+    @State private var editingTemplate: MealTemplate?
     @State private var pendingTemplate: MealTemplate?
     @State private var filledMessage: String?
     /// 已经展开明细的套餐组；键是 `template:<套餐UUID>`。
@@ -113,8 +119,22 @@ struct TodayView: View {
             .background(Theme.pageBackground)
             .navigationTitle(greetingTitle)
             .sheet(isPresented: $showFoodSheet) {
-                AddFoodSheet(defaultMeal: presetMeal ?? AddFoodSheet.suggestedMeal())
-                    .onDisappear { presetMeal = nil }
+                AddFoodSheet(
+                    defaultMeal: presetMeal ?? AddFoodSheet.suggestedMeal(),
+                    date: presetDate ?? Date()
+                )
+                .onDisappear {
+                    presetMeal = nil
+                    presetDate = nil
+                }
+            }
+            // 改某一条走单独的 sheet，免得和新增抢同一份状态。
+            .sheet(item: $editingFood) { entry in
+                AddFoodSheet(editing: entry)
+            }
+            // 套餐「改完再记」：摊开成可编辑清单。
+            .sheet(item: $editingTemplate) { template in
+                TemplateFillSheet(template: template, date: Date())
             }
             .sheet(isPresented: $showActivitySheet) {
                 ActivityEditorView(bodyKilograms: latestWeight?.kilograms ?? profile?.startWeightKilograms ?? 60)
@@ -133,6 +153,11 @@ struct TodayView: View {
             ) { template in
                 Button("记上，约 \(Fmt.kcal(template.totalKcal)) 千卡") {
                     applyTemplate(template)
+                    pendingTemplate = nil
+                }
+                // 想吃少一点，或者换掉两样：摊开来改，只影响这一次。
+                Button("改完再记") {
+                    editingTemplate = template
                     pendingTemplate = nil
                 }
                 Button("取消", role: .cancel) { pendingTemplate = nil }
@@ -272,11 +297,25 @@ struct TodayView: View {
 
     private var foodCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            HStack(spacing: 10) {
                 CardTitle(text: "今天吃了什么", symbol: "fork.knife.circle")
                 Spacer()
+                // 早上想起昨晚忘了记：一步把日期拨到昨天，省得进页面再改。
+                Button {
+                    presetDate = Calendar.current.date(byAdding: .day, value: -1, to: Date())
+                    presetMeal = nil
+                    showFoodSheet = true
+                } label: {
+                    Text("补记昨天")
+                        .font(.footnote)
+                        .frame(minHeight: 32)
+                }
+                .buttonStyle(.borderless)
+                .tint(Theme.accent)
+                .accessibilityHint("把日期定到昨天，用来补记")
                 Button {
                     presetMeal = nil
+                    presetDate = nil
                     showFoodSheet = true
                 } label: {
                     Label("加一条", systemImage: "plus")
@@ -337,6 +376,7 @@ struct TodayView: View {
 
                 Button {
                     presetMeal = meal
+                    presetDate = nil
                     showFoodSheet = true
                 } label: {
                     Image(systemName: "plus.circle.fill")
@@ -516,6 +556,11 @@ struct TodayView: View {
                 .foregroundColor(.primary)
 
             Menu {
+                Button {
+                    editingFood = entry
+                } label: {
+                    Label("改这条", systemImage: "pencil")
+                }
                 Button(role: .destructive) {
                     Persistence.shared.delete(entry)
                 } label: {
