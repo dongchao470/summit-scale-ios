@@ -100,24 +100,29 @@ struct TodayView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: Theme.stackSpacing) {
-                    if let ledger = ledger {
-                        calorieCard(ledger)
-                        macroCard(ledger.budget)
-                    } else {
-                        profilePromptCard
-                    }
-                    weightCard
-                    foodCard
-                    activityCard
+            // 用系统 List 分组，不再拿 ScrollView 拼一摞手绘卡片：
+            // 分组间距、圆角、分隔线、左滑这些交给系统，比手写的好看也好维护。
+            List {
+                if let ledger = ledger {
+                    Section { calorieCard(ledger) }
+                    Section { macroCard(ledger.budget) }
+                } else {
+                    Section { profilePromptCard }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 110)
+                Section { weightCard }
+                // 吃喝按餐次各占一个分组，餐次名就是分组标题。
+                ForEach(MealType.allCases) { meal in
+                    mealSection(meal)
+                }
+                Section { activityCard }
             }
-            .background(Theme.pageBackground)
+            .listStyle(.insetGrouped)
             .navigationTitle(greetingTitle)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    recordMenu
+                }
+            }
             .sheet(isPresented: $showFoodSheet) {
                 AddFoodSheet(
                     defaultMeal: presetMeal ?? AddFoodSheet.suggestedMeal(),
@@ -205,7 +210,6 @@ struct TodayView: View {
                 )
             }
         }
-        .card()
     }
 
     // MARK: - 营养素卡
@@ -220,7 +224,6 @@ struct TodayView: View {
                 budget: budget
             )
         }
-        .card()
     }
 
     // MARK: - 档案缺失
@@ -243,7 +246,6 @@ struct TodayView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
             }
         }
-        .card()
     }
 
     // MARK: - 体重卡
@@ -285,7 +287,6 @@ struct TodayView: View {
                 .foregroundColor(delta <= 0 ? Theme.success : Theme.warning)
             }
         }
-        .card()
     }
 
     private var weightDelta: Double? {
@@ -293,87 +294,76 @@ struct TodayView: View {
         return weights[0].kilograms - weights[1].kilograms
     }
 
-    // MARK: - 饮食卡
+    // MARK: - 记录入口
 
-    private var foodCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                CardTitle(text: "今天吃了什么", symbol: "fork.knife.circle")
-                Spacer()
-                // 早上想起昨晚忘了记：一步把日期拨到昨天，省得进页面再改。
-                Button {
-                    presetDate = Calendar.current.date(byAdding: .day, value: -1, to: Date())
-                    presetMeal = nil
-                    showFoodSheet = true
-                } label: {
-                    Text("补记昨天")
-                        .font(.footnote)
-                        .frame(minHeight: 32)
-                }
-                .buttonStyle(.borderless)
-                .tint(Theme.accent)
-                .accessibilityHint("把日期定到昨天，用来补记")
-                Button {
-                    presetMeal = nil
-                    presetDate = nil
-                    showFoodSheet = true
-                } label: {
-                    Label("加一条", systemImage: "plus")
-                        .labelStyle(.titleAndIcon)
-                        .font(.footnote.weight(.semibold))
-                        .frame(minHeight: 32)
-                }
-                .buttonStyle(.bordered)
-                .tint(Theme.accent)
+    /// 「记一条」「补记昨天」「套用套餐」这些低频动作收进右上角菜单，
+    /// 不再挤在卡片标题行里抢地方；日常加一条直接点各餐次标题右边的加号。
+    private var recordMenu: some View {
+        Menu {
+            Button {
+                presetMeal = nil
+                presetDate = nil
+                showFoodSheet = true
+            } label: {
+                Label("记一条饮食", systemImage: "fork.knife")
             }
-
-            ForEach(MealType.allCases) { meal in
-                mealSection(meal)
+            // 早上想起昨晚忘了记：一步把日期拨到昨天，省得进页面再改。
+            Button {
+                presetDate = Calendar.current.date(byAdding: .day, value: -1, to: Date())
+                presetMeal = nil
+                showFoodSheet = true
+            } label: {
+                Label("补记昨天", systemImage: "calendar.badge.minus")
             }
+            if !templates.isEmpty {
+                Section("套用套餐") {
+                    ForEach(templates) { template in
+                        Button {
+                            pendingTemplate = template
+                        } label: {
+                            Label(template.name, systemImage: "wand.and.stars")
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "plus.circle.fill")
         }
-        .card()
+        .accessibilityLabel("记一笔")
     }
 
-    /// 列表缩进两档，全 App 只此一处定义。
-    ///
-    /// 一级 26：单独添加的条目，与餐次标题的文字左边缘对齐。
-    /// 二级 46：套餐展开的明细，与套餐名的文字左边缘对齐（图标 36 + 间距 10）。
-    private static let singleIndent: CGFloat = 26
-    private static let groupIndent: CGFloat = 46
-
+    /// 一个餐次就是一个分组：标题写明餐次和已入账热量，右侧加号按当餐记账。
     @ViewBuilder
     private func mealSection(_ meal: MealType) -> some View {
         let entries = todayFoods.filter { $0.mealValue == meal }
         let kcal = entries.reduce(0) { $0 + $1.kcal }
 
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+        Section {
+            if entries.isEmpty {
+                Text("还没有记录")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            } else {
+                let split = splitByTemplate(entries)
+                ForEach(split.singles) { entry in
+                    foodRow(entry)
+                }
+                ForEach(split.groups) { group in
+                    templateGroupRow(group)
+                }
+            }
+        } header: {
+            HStack(spacing: 6) {
                 Image(systemName: meal.symbol)
-                    .font(.footnote.weight(.semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundColor(Theme.accent)
                     .accessibilityHidden(true)
                 Text(meal.title)
-                    .font(.subheadline.weight(.semibold))
-                Text(Fmt.kcal(kcal) + " kcal")
-                    .font(.caption)
+                Text(Fmt.kcal(kcal) + " 千卡")
                     .foregroundColor(.secondary)
                     .monospacedDigit()
                 Spacer()
-
-                if let template = templates.first(where: { $0.meal == meal }) {
-                    // 套餐点一下就是整份入账，误触代价太大，所以先弹一次确认。
-                    Button {
-                        pendingTemplate = template
-                    } label: {
-                        Label(template.name, systemImage: "wand.and.stars")
-                            .font(.caption.weight(.semibold))
-                            .frame(minHeight: 28)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(Theme.accent)
-                    .accessibilityLabel("套用套餐 \(template.name)，需要确认")
-                }
-
+                // 套餐不再常驻占位，挪进右上角菜单；这里只留「按这个餐次加一条」。
                 Button {
                     presetMeal = meal
                     presetDate = nil
@@ -381,28 +371,14 @@ struct TodayView: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.body)
-                        .frame(width: 44, height: 44)
+                        .foregroundColor(Theme.accent)
+                        .frame(minWidth: 36, minHeight: 30)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .foregroundColor(Theme.accent)
+                .buttonStyle(.borderless)
                 .accessibilityLabel("往\(meal.title)加食物")
             }
-
-            if entries.isEmpty {
-                Text("还没有记录")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.leading, 26)
-            } else {
-                let split = splitByTemplate(entries)
-                ForEach(split.singles) { entry in
-                    foodRow(entry, indent: Self.singleIndent)
-                }
-                ForEach(split.groups) { group in
-                    templateGroupRow(group)
-                }
-            }
+            .textCase(nil)
         }
     }
 
@@ -469,48 +445,44 @@ struct TodayView: View {
         return "套餐"
     }
 
+    /// 同一份套餐补进来的几条在界面上折成一行，点开才摊平明细。
+    @ViewBuilder
     private func templateGroupRow(_ group: TemplateGroup) -> some View {
         let expanded = expandedGroups.contains(group.id)
 
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: "wand.and.stars")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundColor(Theme.accent)
-                    .frame(width: 36, height: 36)
-                    .background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.controlRadius, style: .continuous))
-                    .accessibilityHidden(true)
+        HStack(spacing: 10) {
+            // 不再铺那层 12% 淡底：整页已经够多自绘了，靠强调色本身区分就够。
+            Image(systemName: "wand.and.stars")
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(Theme.accent)
+                .frame(width: 36)
+                .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(group.name)
-                        .font(.subheadline.weight(.medium))
-                    Text("套餐 · \(group.itemCount) 样 · " + Fmt.kcal(group.totalKcal) + " kcal")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .monospacedDigit()
-                }
-
-                Spacer()
-
-                Button {
-                    toggleGroup(group.id)
-                } label: {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .font(.footnote.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.secondary)
-                .accessibilityLabel(expanded ? "收起套餐明细" : "展开套餐明细")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(group.name)
+                    .font(.subheadline.weight(.medium))
+                Text("套餐 · \(group.itemCount) 样 · " + Fmt.kcal(group.totalKcal) + " 千卡")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .monospacedDigit()
             }
 
-            if expanded {
-                ForEach(group.entries) { entry in
-                    // 二级缩进：让明细的图标与上面套餐名的文字左边缘对齐，
-                    // 而不是在 foodRow 内部缩进之外再叠一层、越缩越歪。
-                    foodRow(entry, indent: Self.groupIndent)
-                }
+            Spacer(minLength: 4)
+
+            Image(systemName: "chevron.down")
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(.secondary)
+                .rotationEffect(.degrees(expanded ? -180 : 0))
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { toggleGroup(group.id) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(expanded ? "收起\(group.name)的明细" : "展开\(group.name)的明细")
+
+        if expanded {
+            ForEach(group.entries) { entry in
+                foodRow(entry)
             }
         }
     }
@@ -523,11 +495,9 @@ struct TodayView: View {
         }
     }
 
-    /// 缩进由调用方传入。
-    ///
-    /// 旧版把 26 写死在 foodRow 内部，套餐明细外面又叠一层 22，两个层级永远错位：
-    /// 单独加的食物缩进 26，套餐展开的明细缩进 48，图标与文字都对不上。
-    private func foodRow(_ entry: FoodEntry, indent: CGFloat) -> some View {
+    /// 一行一条。改和删走左滑，不再挂省略号菜单——
+    /// 那玩意儿既占宽度，又等于把「改」藏进两次点击里。
+    private func foodRow(_ entry: FoodEntry) -> some View {
         HStack(spacing: 10) {
             FoodThumb(
                 // FoodEntry 只有一个图片字段：联网条目存 http 地址，
@@ -541,7 +511,6 @@ struct TodayView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.name)
                     .font(.subheadline)
-                    .foregroundColor(.primary)
                     .lineLimit(1)
                 Text("\(Fmt.grams(entry.grams)) g·蛋白 \(Fmt.grams(entry.protein)) / 碳水 \(Fmt.grams(entry.carbs)) / 脂肪 \(Fmt.grams(entry.fat))")
                     .font(.caption2)
@@ -553,28 +522,20 @@ struct TodayView: View {
 
             Text(Fmt.kcal(entry.kcal))
                 .font(Theme.number(15, weight: .semibold))
-                .foregroundColor(.primary)
-
-            Menu {
-                Button {
-                    editingFood = entry
-                } label: {
-                    Label("改这条", systemImage: "pencil")
-                }
-                Button(role: .destructive) {
-                    Persistence.shared.delete(entry)
-                } label: {
-                    Label("删除这条", systemImage: "trash")
-                }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.footnote)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("\(entry.name) 的更多操作")
         }
-        .padding(.leading, indent)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                Persistence.shared.delete(entry)
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+            Button {
+                editingFood = entry
+            } label: {
+                Label("改这条", systemImage: "pencil")
+            }
+            .tint(Theme.accent)
+        }
     }
 
     // MARK: - 运动卡
@@ -646,25 +607,17 @@ struct TodayView: View {
 
                         Text(Fmt.kcal(activity.kcal))
                             .font(Theme.number(15, weight: .semibold))
-
-                        Menu {
-                            Button(role: .destructive) {
-                                Persistence.shared.delete(activity)
-                            } label: {
-                                Label("删除这条", systemImage: "trash")
-                            }
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            Persistence.shared.delete(activity)
                         } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.footnote)
-                                .frame(width: 32, height: 32)
-                                .contentShape(Rectangle())
+                            Label("删除", systemImage: "trash")
                         }
-                        .accessibilityLabel("\(activity.displayTitle) 的更多操作")
                     }
                 }
             }
         }
-        .card()
     }
 
     private func activitySubtitle(_ activity: ActivityEntry) -> String {

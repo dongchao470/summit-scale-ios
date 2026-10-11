@@ -12,12 +12,9 @@ import SwiftUI
 enum Theme {
     // MARK: - 强调色
 
-    /// 全 App 唯一强调色：山青。深浅模式各一版，保证两种模式下正文级对比度。
-    static let accent = Color(uiColor: UIColor { trait in
-        trait.userInterfaceStyle == .dark
-            ? UIColor(red: 0.31, green: 0.80, blue: 0.72, alpha: 1)
-            : UIColor(red: 0.04, green: 0.52, blue: 0.46, alpha: 1)
-    })
+    /// 全 App 唯一强调色：玫红。直接用系统 pink（浅 #FF2D55 / 深 #FF375F），
+    /// 自动跟随深浅模式与「增强对比度」，比自己写死 RGB 更稳。
+    static let accent = Color(uiColor: .systemPink)
 
     // MARK: - 状态色
 
@@ -88,10 +85,10 @@ struct CardTitle: View {
     var body: some View {
         HStack(spacing: 6) {
             if let symbol = symbol {
-                // 图标用次级灰而非强调色：一屏有多张卡片时，彩色图标会变成视觉噪音。
+                // 图标走强调色：用户明确要的，卡片靠它拿区分度。
                 Image(systemName: symbol)
                     .font(.footnote.weight(.semibold))
-                    .foregroundColor(Theme.secondaryText)
+                    .foregroundColor(Theme.accent)
                     .accessibilityHidden(true)
             }
             Text(text)
