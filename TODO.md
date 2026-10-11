@@ -183,3 +183,76 @@ GitHub Actions `6d5c7dd3` 编译通过，产出 `SummitScale-0.3.3-build6-unsign
 
 **待观察**：`FoodExtraCFCT.swift` 里 8 条记录的热量与 4/4/9 公式对不上（膳食纤维计入热量但
 不计入碳水），已有注释说明并从 CI 门槛里豁免，只在脚本输出里提示。
+
+---
+
+## 7. v0.3.4 ~ v0.3.5（2026-10-11）崩溃修复与配图
+
+### 7.1 v0.3.4 build 7：点「饮食库」必崩
+
+用户反馈：点饮食库直接闪退。
+
+崩溃日志（`SummitScale-2026-10-11-184907.ips`，`/var/mobile/Library/Logs/CrashReporter/`）：
+
+```
+exception  : EXC_BREAKPOINT / SIGTRAP（Swift 运行时 trap）
+faultingThread: 0（主线程）
+bundle     : com.dongchao470.summit-scale 0.3.3 build 6（崩溃发生的版本）
+栈帧（自顶向下截取）:
+  $sSD17dictionaryLiteralSDyxq_Gx_q_td_tcfCSS_SSTt0g5Tf4g_n   字典字面量构造
+  one-time initialization function for map                    FoodImages.map 懒加载
+  _dispatch_client_callout / _dispatch_once_callout
+  FoodItem.imageURL.getter
+  closure #2 in closure #2 in closure #1 in FoodPickerSheet.localSection.getter
+```
+
+根因：`FoodImages.map` 字典字面量里有两个 `"cf_latte"`（第 56 行是原有的，第 322 行是
+v0.3.3 删掉重名条目 `latte` 后把它的图改挂过去时撞出来的）。**Swift 字典字面量遇到重复 key
+是运行时 trap，编译期不报错。** 而 `FoodItem.imageURL` 在这次之前从没被任何界面调用过，
+所以这个雷一直埋着，直到 v0.3.3 把 `FoodPickerSheet` 里写死的 `imageURL: nil` 改成
+`item.imageURL` 才第一次引爆。
+
+修法：
+- 删掉重复的 `cf_latte`
+- 清掉 10 个挂在已删条目上的孤儿配图
+- **发现并恢复了一条被误删的条目**「紫菜蛋花汤」：v0.3.3 先按重名删掉了新表里的
+  `ck_zicai_danhua`，随后又删掉了旧表里的 `d2_seaweed_egg_soup` 和 `kelp_pork_soup`，
+  两轮下来净丢一条。用 `git show 7a8b112:...` 对比新旧条目名做了全量核对，只丢了这一条。
+- 新增 `tools/verify_images.py` 并挂进 CI，重复 key 不许再过去
+
+### 7.2 v0.3.5 build 8：配图打包 + 分类图标
+
+用户追问「本地还是没图片吗」。实测数据：
+
+| 指标 | 数值 |
+| --- | --- |
+| 食物库总条数 | 2010 |
+| 配过图的 id | 434 |
+| 按 id 命中 | 434 |
+| 覆盖率 | 21.6% |
+| 按名字复用能多覆盖 | 0 |
+
+配图键全是「红烧肉」「拿铁」这类成菜/饮品，跟成分表的「猪里脊」「小麦粉」对不上，
+按名字复用一条都蹭不到。所以要解决得靠两件事：
+
+**（1）434 张图打包进 App**（用户选「打包进 IPA，离线也有图」）
+- 从下厨房 CDN 抓回 434 张，`imageView2` 参数改 `w/256/h/256/q/65` 压到 256×256
+- 共 5.48 MB，零失败（并发 8，用时 100 秒）
+- 生成 `Assets.xcassets/FoodImages/` 下 434 个 imageset（single-scale，`provides-namespace: false`）
+- `FoodImages.url(for:)` → `assetName(for:)`，返回 `food_<id>`；map 里的地址降级为来源记录
+- `FoodItem.imageURL` → `imageName`
+
+**（2）剩余 1576 条按分类给 SF Symbol**（用户选「SF Symbols 矢量图标」）
+- 新增 `Domain/FoodCategorySymbol.swift`，15 个分类各一个符号
+- `FoodThumb` 改成三来源优先级：打包资源 > 远程地址 > SF Symbol
+- 符号名写错在真机上只是静默空白不崩，很难发现，所以每次取值都过一遍
+  `UIImage(systemName:)` 校验，拿不到就退回 `fork.knife`
+
+**踩到的约束**：`FoodEntry` / `MealTemplate` 都只有一个 `imageURL` 字段，而红线是
+`Persistence.swift` 加载失败会删库重建，不能加列。所以本地条目在该字段存资源名、
+联网条目存 http 地址，渲染时按 `hasPrefix("http")` 分流。入账落在
+`AddFoodSheet` / `TemplateEditorView` 两处。
+
+**验证**：`verify_food.py`、`verify_autofill.py`、`verify_images.py` 本地退出码 0；
+配图资源 434/434 齐备。**未做真机验证** —— 需用户安装后确认饮食库能进、图片显示正常、
+断网时仍有图、无图条目的分类图标不空白。

@@ -482,7 +482,8 @@ struct TodayView: View {
                 // 本地条目存打包资源名，靠前缀分流。
                 imageName: (entry.imageURL?.hasPrefix("http") ?? false) ? nil : entry.imageURL,
                 urlString: (entry.imageURL?.hasPrefix("http") ?? false) ? entry.imageURL : nil,
-                symbol: FoodCategorySymbol.symbol(for: entry.category),
+                // FoodEntry 没存分类，拿名字回本地库反查一次；查不到就用默认刀叉。
+                symbol: FoodCategorySymbol.symbol(for: FoodLibrary.bestMatch(entry.name)?.category ?? ""),
                 size: 36
             )
             VStack(alignment: .leading, spacing: 2) {
