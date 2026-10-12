@@ -74,7 +74,7 @@ enum WorkoutSync {
             var distance: [(day: Date, kilometers: Double)]?
 
             // 四路查询都在主线程回调，齐了再一起写库，避免一小时内写四次。
-            func finishIfReady() {
+            @MainActor func finishIfReady() {
                 guard let w = workouts, let s = steps, let e = energy, let d = distance else { return }
                 var summary = insert(w)
                 summary.workoutCount = w.count
