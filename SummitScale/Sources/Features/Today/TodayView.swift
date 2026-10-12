@@ -48,6 +48,10 @@ struct TodayView: View {
     @State private var healthBurnKcal: Double = 0
     /// 健康推送的最新体重；非 nil 时展示并提醒是否替换当前记录。
     @State private var healthWeightKg: Double?
+    /// 健康今日活动明细（步数/锻炼消耗/锻炼时长），未启用时为空。
+    @State private var healthActivity = HealthKitManager.TodayActivity()
+    /// 健康读到的昨夜睡眠时长（小时），未读到为 nil。
+    @State private var healthSleepHours: Double?
 
     private var healthBurn: Double {
         healthBurnKcal
@@ -57,6 +61,95 @@ struct TodayView: View {
     private func refreshHealthData() {
         HealthKitManager.shared.todayActivityKcal { kcal in
             healthBurnKcal = kcal
+        }
+        HealthKitManager.shared.todayActivityDetail { healthActivity = $0 }
+        HealthKitManager.shared.lastNightSleepHours { healthSleepHours = $0 }
+    }
+
+    // MARK: - A2 今日活动明细卡（来自 Apple 健康）
+
+    private var healthStepSubtitle: String? {
+        let kcal = Int(healthActivity.steps * 0.04)
+        return kcal > 0 ? "折合约 \(kcal) kcal" : nil
+    }
+
+    private var healthExerciseSubtitle: String? {
+        let mins = Int(healthActivity.exerciseMinutes.rounded())
+        return mins > 0 ? "\(mins) 分钟" : nil
+    }
+
+    private func healthMetricRow(symbol: String, tint: Color, title: String, subtitle: String?, value: String, unit: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.body.weight(.semibold))
+                .foregroundColor(tint)
+                .frame(width: 32, height: 32)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                Text(unit)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title) \(value) \(unit)")
+    }
+
+    @ViewBuilder
+    private var healthTodayCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            CardTitle(text: "今日活动 · 来自 Apple 健康", symbol: "heart.fill")
+
+            VStack(spacing: 0) {
+                if healthActivity.steps > 0 {
+                    healthMetricRow(
+                        symbol: "figure.walk",
+                        tint: Theme.accent,
+                        title: "步数",
+                        subtitle: healthStepSubtitle,
+                        value: healthActivity.steps.formatted(.number.precision(.fractionLength(0))),
+                        unit: "步"
+                    )
+                }
+                if healthActivity.activeKcal > 0 || healthActivity.exerciseMinutes > 0 {
+                    healthMetricRow(
+                        symbol: "flame.fill",
+                        tint: .orange,
+                        title: "锻炼",
+                        subtitle: healthExerciseSubtitle,
+                        value: Fmt.kcal(healthActivity.activeKcal),
+                        unit: "kcal"
+                    )
+                }
+                if let sleep = healthSleepHours {
+                    healthMetricRow(
+                        symbol: "moon.zzz.fill",
+                        tint: .purple,
+                        title: "昨夜睡眠",
+                        subtitle: nil,
+                        value: String(format: "%.1f", sleep),
+                        unit: "小时"
+                    )
+                }
+            }
         }
     }
 
@@ -125,6 +218,9 @@ struct TodayView: View {
                     Section { calorieHeroCard(ledger) }
                 } else {
                     Section { profilePromptCard }
+                }
+                if healthActivity.hasData || healthSleepHours != nil {
+                    Section { healthTodayCard }
                 }
                 Section { weightCard }
                 // 吃喝按餐次各占一个分组，餐次名就是分组标题。

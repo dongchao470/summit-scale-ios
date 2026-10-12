@@ -46,6 +46,8 @@ struct TrendsView: View {
     @State private var span: Span = .week
     /// 健康提供的昨晚睡眠时长（小时），未启用为 nil。
     @State private var sleepHours: Double?
+    /// 健康提供的每日步数（含今天），未启用为空；供体重×步数叠图。
+    @State private var dailyStepPoints: [DayValue] = []
 
     // MARK: - 派生数据
 
@@ -141,6 +143,29 @@ struct TrendsView: View {
         return (low - padding)...(high + padding)
     }
 
+    /// 区间内有步数记录的日子（去掉 0）。
+    private var stepsLogged: [Double] {
+        dailyStepPoints.map { $0.value }.filter { $0 > 0 }
+    }
+
+    /// 把步数线性映射到体重域下半部，作为体重曲线背后的强弱柱。
+    private func stepBarY(_ steps: Double) -> Double {
+        guard let maxSteps = dailyStepPoints.map({ $0.value }).max(), maxSteps > 0 else {
+            return weightDomain.lowerBound
+        }
+        let lo = weightDomain.lowerBound
+        let span = weightDomain.upperBound - lo
+        return lo + (steps / maxSteps) * span * 0.5
+    }
+
+    /// 体重×步数解读：这段时间体重方向 + 日均步数。
+    private var trendInsight: String? {
+        guard let change = weightChange, !stepsLogged.isEmpty else { return nil }
+        let avg = Int((stepsLogged.reduce(0, +) / Double(stepsLogged.count)).rounded())
+        let dir = change <= 0 ? "↓ \(Fmt.kg(abs(change))) kg" : "↑ \(Fmt.kg(change)) kg"
+        return "这段时间体重 \(dir)，日均 \(avg.formatted()) 步。"
+    }
+
     private var calorieDomain: ClosedRange<Double> {
         let peak = max(dailyIntake.map { $0.value }.max() ?? 0, budget?.intakeTarget ?? 0)
         return 0...(max(peak * 1.15, 500))
@@ -171,6 +196,14 @@ struct TrendsView: View {
             .navigationTitle("趋势")
             .onAppear {
                 HealthKitManager.shared.lastNightSleepHours { sleepHours = $0 }
+                HealthKitManager.shared.dailySteps(days: span.days) { points in
+                    dailyStepPoints = points.map { DayValue(day: $0.day, value: $0.steps) }
+                }
+            }
+            .onChange(of: span) { newSpan in
+                HealthKitManager.shared.dailySteps(days: newSpan.days) { points in
+                    dailyStepPoints = points.map { DayValue(day: $0.day, value: $0.steps) }
+                }
             }
         }
     }
@@ -294,43 +327,84 @@ struct TrendsView: View {
             if weightPoints.count < 2 {
                 emptyHint("这段区间至少记两次体重，曲线才画得出来")
             } else {
-                Chart {
-                    ForEach(weightPoints) { point in
-                        LineMark(
-                            x: .value("日期", point.day),
-                            y: .value("体重", point.value)
-                        )
-                        .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Theme.accent)
-
-                        PointMark(
-                            x: .value("日期", point.day),
-                            y: .value("体重", point.value)
-                        )
-                        .foregroundStyle(Theme.accent)
-                        .symbolSize(30)
-                    }
-
-                    if let target = profile?.targetWeightKilograms {
-                        // 目标线走中性灰虚线，不抢体重曲线的强调色，也不再用绿色。
-                        RuleMark(y: .value("目标", target))
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-                            .foregroundStyle(Theme.secondaryText)
-                            .annotation(position: .top, alignment: .leading) {
-                                Text("目标 \(Fmt.kg(target)) kg")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 12) {
+                    Chart {
+                        // 每日步数作体重曲线背后的强弱柱（映射到体重域下半部，仅示相对高低）。
+                        ForEach(dailyStepPoints) { point in
+                            if point.value > 0 {
+                                BarMark(
+                                    x: .value("日期", point.day),
+                                    yStart: .value("基线", weightDomain.lowerBound),
+                                    yEnd: .value("步数", stepBarY(point.value))
+                                )
+                                .foregroundStyle(Theme.accent.opacity(0.16))
+                                .cornerRadius(3)
                             }
+                        }
+
+                        ForEach(weightPoints) { point in
+                            LineMark(
+                                x: .value("日期", point.day),
+                                y: .value("体重", point.value)
+                            )
+                            .interpolationMethod(.catmullRom)
+                            .foregroundStyle(Theme.accent)
+
+                            PointMark(
+                                x: .value("日期", point.day),
+                                y: .value("体重", point.value)
+                            )
+                            .foregroundStyle(Theme.accent)
+                            .symbolSize(30)
+                        }
+
+                        if let target = profile?.targetWeightKilograms {
+                            // 目标线走中性灰虚线，不抢体重曲线的强调色，也不再用绿色。
+                            RuleMark(y: .value("目标", target))
+                                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                                .foregroundStyle(Theme.secondaryText)
+                                .annotation(position: .top, alignment: .leading) {
+                                    Text("目标 \(Fmt.kg(target)) kg")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                        }
+                    }
+                    .chartYScale(domain: weightDomain)
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                            AxisGridLine()
+                            AxisValueLabel(format: .dateTime.month().day())
+                        }
+                    }
+                    .frame(height: 190)
+
+                    HStack(spacing: 16) {
+                        HStack(spacing: 5) {
+                            Capsule()
+                                .fill(Theme.accent)
+                                .frame(width: 14, height: 3)
+                            Text("体重 kg")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        HStack(spacing: 5) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Theme.accent.opacity(0.16))
+                                .frame(width: 10, height: 10)
+                            Text("每日步数")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .accessibilityHidden(true)
+
+                    if let insight = trendInsight {
+                        Text(insight)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
                 }
-                .chartYScale(domain: weightDomain)
-                .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-                        AxisGridLine()
-                        AxisValueLabel(format: .dateTime.month().day())
-                    }
-                }
-                .frame(height: 190)
             }
         } header: {
             HStack(spacing: 6) {

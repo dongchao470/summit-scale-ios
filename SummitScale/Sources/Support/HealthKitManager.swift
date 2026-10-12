@@ -78,6 +78,7 @@ final class HealthKitManager: ObservableObject {
             HKObjectType.quantityType(forIdentifier: .bodyMass)!,
             HKObjectType.quantityType(forIdentifier: .stepCount)!,
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
+            HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
             HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
         ]
         return types
@@ -214,6 +215,90 @@ final class HealthKitManager: ObservableObject {
         }
 
         group.notify(queue: .main) { completion(total) }
+    }
+
+    // MARK: - 活动明细：今日步数 / 锻炼消耗 / 锻炼时长
+
+    /// 今日活动明细，供首页「今日活动」卡逐项展示。
+    struct TodayActivity {
+        var steps: Double = 0
+        var activeKcal: Double = 0
+        var exerciseMinutes: Double = 0
+        var hasData: Bool { steps > 0 || activeKcal > 0 || exerciseMinutes > 0 }
+    }
+
+    /// 读今天的步数、锻炼活动消耗（kcal）与锻炼时长（分钟），分开返回。
+    func todayActivityDetail(completion: @escaping (TodayActivity) -> Void) {
+        guard authorized, enabled, activitySync else {
+            Task { @MainActor in completion(TodayActivity()) }
+            return
+        }
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: Date())
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
+
+        var result = TodayActivity()
+        let group = DispatchGroup()
+
+        if let steps = HKQuantityType.quantityType(forIdentifier: .stepCount) {
+            group.enter()
+            let q = HKStatisticsQuery(quantityType: steps, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stat, _ in
+                result.steps = stat?.sumQuantity()?.doubleValue(for: .count()) ?? 0
+                group.leave()
+            }
+            store.execute(q)
+        }
+        if let burned = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+            group.enter()
+            let q = HKStatisticsQuery(quantityType: burned, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stat, _ in
+                result.activeKcal = stat?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
+                group.leave()
+            }
+            store.execute(q)
+        }
+        if let exercise = HKQuantityType.quantityType(forIdentifier: .appleExerciseTime) {
+            group.enter()
+            let q = HKStatisticsQuery(quantityType: exercise, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stat, _ in
+                result.exerciseMinutes = stat?.sumQuantity()?.doubleValue(for: .minute()) ?? 0
+                group.leave()
+            }
+            store.execute(q)
+        }
+
+        group.notify(queue: .main) { completion(result) }
+    }
+
+    /// 近 days 天每天的步数（含今天），按日升序；无数据的日子补 0。供趋势页步数柱。
+    func dailySteps(days: Int, completion: @escaping ([(day: Date, steps: Double)]) -> Void) {
+        guard authorized, enabled, activitySync,
+              let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) else {
+            Task { @MainActor in completion([]) }
+            return
+        }
+        let calendar = Calendar.current
+        let anchor = calendar.startOfDay(for: Date())
+        let startDay = calendar.date(byAdding: .day, value: -(max(days, 1) - 1), to: anchor) ?? anchor
+        let predicate = HKQuery.predicateForSamples(withStart: startDay, end: Date(), options: .strictStartDate)
+        var interval = DateComponents()
+        interval.day = 1
+
+        let query = HKStatisticsCollectionQuery(
+            quantityType: stepType,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum,
+            anchorDate: anchor,
+            intervalComponents: interval
+        )
+        query.initialResultsHandler = { _, collection, _ in
+            var out: [(day: Date, steps: Double)] = []
+            collection?.enumerateStatistics(from: startDay, to: Date()) { stat, _ in
+                let day = calendar.startOfDay(for: stat.startDate)
+                let steps = stat.sumQuantity()?.doubleValue(for: .count()) ?? 0
+                out.append((day: day, steps: steps))
+            }
+            Task { @MainActor in completion(out) }
+        }
+        store.execute(query)
     }
 
     // MARK: - 睡眠：昨晚时长（小时）
