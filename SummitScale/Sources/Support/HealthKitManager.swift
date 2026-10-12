@@ -81,6 +81,7 @@ final class HealthKitManager: ObservableObject {
             HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
             HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
             HKObjectType.quantityType(forIdentifier: .heartRate)!,
+            HKObjectType.workoutType(),
         ]
         return types
     }
@@ -106,6 +107,26 @@ final class HealthKitManager: ObservableObject {
                     self.errorMessage = "授权被拒绝或失败：\(error?.localizedDescription ?? "未知原因")"
                 }
             }
+        }
+    }
+
+    /// 用户自己开过健康同步没有——不看当前授权状态。
+    /// 新增权限类型（比如锻炼记录）还没决定过时，授权状态会回到「未授权」，
+    /// 这时候仍然需要按用户的意愿去补权限、补数据。
+    var enabledByUser: Bool { defaults.bool(forKey: Keys.enabled) }
+
+    /// 补问新增的权限类型；已经决定过的类型系统不会重复弹窗。
+    /// 返回是否走完授权流程（HealthKit 不告诉 App 用户是否拒绝读权限，只能靠查询结果判断）。
+    func ensureAccess() async -> Bool {
+        guard HKHealthStore.isHealthDataAvailable() else { return false }
+        do {
+            try await store.requestAuthorization(toShare: writeTypes, read: readTypes)
+            authorized = true
+            errorMessage = nil
+            return true
+        } catch {
+            NSLog("[SummitScale] 补充健康授权失败: \(error)")
+            return false
         }
     }
 
@@ -423,6 +444,124 @@ final class HealthKitManager: ObservableObject {
             let avg = stat?.averageQuantity()?.doubleValue(for: unit)
             let low = stat?.minimumQuantity()?.doubleValue(for: unit)
             Task { @MainActor in completion(avg, low) }
+        }
+        store.execute(query)
+    }
+
+    // MARK: - 锻炼记录（供自动落库）
+
+    /// 一条「健康」里的锻炼，字段对齐本地活动表。
+    struct WorkoutRecord {
+        let externalID: String
+        let start: Date
+        let end: Date
+        let kcal: Double
+        let distanceKilometers: Double
+        let kind: ActivityKind
+        let title: String
+    }
+
+    /// 近 days 天的锻炼记录（HKWorkout），按开始时间升序；没权限或没数据时返回空数组。
+    func recentWorkouts(days: Int, completion: @escaping ([WorkoutRecord]) -> Void) {
+        guard authorized, enabled, activitySync else {
+            Task { @MainActor in completion([]) }
+            return
+        }
+        let calendar = Calendar.current
+        let anchor = calendar.startOfDay(for: Date())
+        let start = calendar.date(byAdding: .day, value: -max(days, 1), to: anchor) ?? anchor
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
+        let sort = [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
+
+        let query = HKSampleQuery(sampleType: HKObjectType.workoutType(),
+                                  predicate: predicate,
+                                  limit: HKObjectQueryNoLimit,
+                                  sortDescriptors: sort) { _, samples, error in
+            if let error {
+                NSLog("[SummitScale] 读锻炼记录失败: \(error)")
+            }
+            let records = ((samples as? [HKWorkout]) ?? []).map { workout -> WorkoutRecord in
+                let described = HealthKitManager.describe(workout.workoutActivityType)
+                return WorkoutRecord(
+                    externalID: workout.uuid.uuidString,
+                    start: workout.startDate,
+                    end: workout.endDate,
+                    kcal: HealthKitManager.kilocalories(of: workout),
+                    distanceKilometers: (workout.totalDistance?.doubleValue(for: .meter()) ?? 0) / 1000,
+                    kind: described.kind,
+                    title: described.title
+                )
+            }
+            Task { @MainActor in completion(records) }
+        }
+        store.execute(query)
+    }
+
+    /// 单次锻炼的活跃消耗；totalEnergyBurned 已被废弃，优先读统计值。
+    nonisolated private static func kilocalories(of workout: HKWorkout) -> Double {
+        if let type = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned),
+           let sum = workout.statistics(for: type)?.sumQuantity() {
+            return sum.doubleValue(for: .kilocalorie())
+        }
+        return workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()) ?? 0
+    }
+
+    /// 系统的运动类型 → App 的运动种类 + 中文名。
+    nonisolated private static func describe(_ type: HKWorkoutActivityType) -> (kind: ActivityKind, title: String) {
+        switch type {
+        case .running:
+            return (.running, "跑步")
+        case .walking:
+            return (.walking, "走路")
+        case .cycling:
+            return (.cycling, "骑行")
+        case .swimming:
+            return (.swimming, "游泳")
+        case .hiking:
+            return (.hiking, "爬山")
+        case .traditionalStrengthTraining, .functionalStrengthTraining,
+             .coreTraining, .crossTraining, .highIntensityIntervalTraining:
+            return (.strength, "力量训练")
+        case .yoga, .pilates, .flexibility:
+            return (.yoga, "瑜伽")
+        case .elliptical, .rowing, .stairClimbing, .jumpRope:
+            return (.other, "有氧训练")
+        default:
+            return (.other, "锻炼")
+        }
+    }
+
+    // MARK: - 每日活跃消耗（供运动趋势柱）
+
+    /// 近 days 天每天的活跃消耗（kcal，含日常活动和锻炼），按日升序；没权限时返回空数组。
+    func dailyActiveEnergy(days: Int, completion: @escaping ([(day: Date, kcal: Double)]) -> Void) {
+        guard authorized, enabled, activitySync,
+              let type = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) else {
+            Task { @MainActor in completion([]) }
+            return
+        }
+        let calendar = Calendar.current
+        let anchor = calendar.startOfDay(for: Date())
+        let startDay = calendar.date(byAdding: .day, value: -(max(days, 1) - 1), to: anchor) ?? anchor
+        let predicate = HKQuery.predicateForSamples(withStart: startDay, end: Date(), options: .strictStartDate)
+        var interval = DateComponents()
+        interval.day = 1
+
+        let query = HKStatisticsCollectionQuery(quantityType: type,
+                                                quantitySamplePredicate: predicate,
+                                                options: .cumulativeSum,
+                                                anchorDate: anchor,
+                                                intervalComponents: interval)
+        query.initialResultsHandler = { _, collection, error in
+            if let error {
+                NSLog("[SummitScale] 读活跃消耗失败: \(error)")
+            }
+            var points: [(day: Date, kcal: Double)] = []
+            collection?.enumerateStatistics(from: startDay, to: Date()) { stat, _ in
+                points.append((day: calendar.startOfDay(for: stat.startDate),
+                               kcal: stat.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0))
+            }
+            Task { @MainActor in completion(points) }
         }
         store.execute(query)
     }

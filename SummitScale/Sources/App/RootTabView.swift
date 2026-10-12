@@ -72,11 +72,21 @@ struct RootTabView: View {
             // 之前没排上的提醒不会自己回来，这里补排一次。
             Reminders.resyncAll(Persistence.shared.allTemplates())
             checkAutoFill()
+            syncWorkouts()
         }
         .onChange(of: scenePhase) { phase in
             // 从后台回来也查一次，避免早上开了 App 晚上才补账。
-            if phase == .active { checkAutoFill() }
+            if phase == .active {
+                checkAutoFill()
+                syncWorkouts()
+            }
         }
+    }
+
+    /// 开过健康同步就把「健康」里的新锻炼补进运动记录；按 workout UUID 去重，重复调用无害。
+    private func syncWorkouts() {
+        guard HealthKitManager.shared.enabledByUser else { return }
+        WorkoutSync.importRecent(days: 30)
     }
 
     // MARK: - 到点补填

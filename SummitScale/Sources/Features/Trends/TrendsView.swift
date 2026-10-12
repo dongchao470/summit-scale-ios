@@ -48,6 +48,8 @@ struct TrendsView: View {
     @State private var sleepHours: Double?
     /// 健康提供的每日步数（含今天），未启用为空；供体重×步数叠图。
     @State private var dailyStepPoints: [DayValue] = []
+    /// 健康提供的每日活跃消耗（kcal，含日常活动），未启用为空数组；供运动消耗趋势柱。
+    @State private var healthBurnPoints: [DayValue] = []
     /// 记录热度中被点选的那一天，nil 表示未展开详情卡。
     @State private var selectedHeatmapDay: DayValue?
     /// 健康提供的近 N 天睡眠分期（深/浅/REM），未启用或无数据为空。
@@ -129,8 +131,12 @@ struct TrendsView: View {
         return logged.reduce(0) { $0 + $1.value } / Double(logged.count)
     }
 
+    /// 区间内总消耗：有健康数据就用健康口径（含日常活动），否则用运动记录合计。
     private var totalBurn: Double {
-        activities.filter { $0.date >= startDay }.reduce(0) { $0 + $1.kcal }
+        if !healthBurnPoints.isEmpty {
+            return healthBurnPoints.reduce(0) { $0 + $1.value }
+        }
+        return activities.filter { $0.date >= startDay }.reduce(0) { $0 + $1.kcal }
     }
 
     private var loggedDays: Int {
@@ -191,6 +197,13 @@ struct TrendsView: View {
         }
     }
 
+    /// 健康口径的每日活跃消耗；读不到就是空数组，趋势柱自己退回运动记录口径。
+    private func loadHealthBurn(days: Int) {
+        HealthKitManager.shared.dailyActiveEnergy(days: days) { points in
+            healthBurnPoints = points.map { DayValue(day: $0.day, value: $0.kcal) }
+        }
+    }
+
     /// 有睡眠数据的日子（去掉全 0 的空白夜）。
     private var sleepLoggedDays: [HealthKitManager.SleepStageDay] {
         sleepStageDays.filter { $0.hasData }
@@ -242,19 +255,31 @@ struct TrendsView: View {
         return result
     }
 
-    /// 运动消耗日均（只算有运动的日子），作柱状图参考虚线。
+    /// 图上真正画的那条线：有健康数据就用健康口径，否则退回本地运动记录。
+    private var burnSeries: [DayValue] {
+        healthBurnPoints.isEmpty ? dailyBurn : healthBurnPoints
+    }
+
+    /// 消耗数字的来源，标出来免得看不懂。
+    private var burnSourceNote: String {
+        healthBurnPoints.isEmpty
+            ? "来自你的运动记录"
+            : "来自 Apple 健康 · 含日常活动的每日活跃消耗"
+    }
+
+    /// 运动消耗日均（只算动过的日子），作柱状图参考虚线。
     private var averageBurnLoggedDay: Double {
-        let logged = dailyBurn.filter { $0.value > 0 }
+        let logged = burnSeries.filter { $0.value > 0 }
         guard !logged.isEmpty else { return 0 }
         return logged.reduce(0) { $0 + $1.value } / Double(logged.count)
     }
 
     private var burnDomain: ClosedRange<Double> {
-        let peak = dailyBurn.map { $0.value }.max() ?? 0
+        let peak = burnSeries.map { $0.value }.max() ?? 0
         return 0...(max(peak * 1.15, 300))
     }
 
-    private var burnActiveDays: Int { dailyBurn.filter { $0.value > 0 }.count }
+    private var burnActiveDays: Int { burnSeries.filter { $0.value > 0 }.count }
 
     // MARK: - 视图
 
@@ -286,12 +311,17 @@ struct TrendsView: View {
                     dailyStepPoints = points.map { DayValue(day: $0.day, value: $0.steps) }
                 }
                 loadSleep(days: span.days)
+                loadHealthBurn(days: span.days)
+                // 顺手把「健康」里的锻炼补进运动记录，列表和趋势才不是空的。
+                WorkoutSync.importRecent(days: span.days)
             }
             .onChange(of: span) { newSpan in
                 HealthKitManager.shared.dailySteps(days: newSpan.days) { points in
                     dailyStepPoints = points.map { DayValue(day: $0.day, value: $0.steps) }
                 }
                 loadSleep(days: newSpan.days)
+                loadHealthBurn(days: newSpan.days)
+                WorkoutSync.importRecent(days: newSpan.days)
             }
         }
     }
@@ -763,20 +793,24 @@ struct TrendsView: View {
 
     private var activitySection: some View {
         Section {
-            if activities.filter({ $0.date >= startDay }).isEmpty {
-                emptyHint("这段时间还没有运动记录")
+            if healthBurnPoints.isEmpty && activities.filter({ $0.date >= startDay }).isEmpty {
+                emptyHint("这段时间还没有运动数据")
             } else {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(Fmt.kcal(totalBurn))
                             .font(Theme.number(30))
-                        Text("千卡 · \(burnActiveDays) 天有运动")
+                        Text("千卡 · \(burnActiveDays) 天有消耗")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
 
+                    Text(burnSourceNote)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
                     Chart {
-                        ForEach(dailyBurn) { item in
+                        ForEach(burnSeries) { item in
                             BarMark(
                                 x: .value("日期", item.day),
                                 y: .value("消耗", item.value)
@@ -813,9 +847,19 @@ struct TrendsView: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(entry.displayTitle)
                                 .font(.subheadline)
-                            Text(Fmt.relativeDay(entry.date))
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
+                            HStack(spacing: 4) {
+                                Text(Fmt.relativeDay(entry.date))
+                                if entry.source == WorkoutSync.source {
+                                    Text("健康")
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .foregroundColor(Theme.accent)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Capsule().fill(Theme.accent.opacity(0.15)))
+                                }
+                            }
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                         }
 
                         Spacer(minLength: 4)

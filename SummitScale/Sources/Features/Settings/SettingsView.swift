@@ -4,6 +4,8 @@ import SwiftUI
 /// 由「我的」页右上角齿轮以 NavigationLink 推入，所以这里不再自带 NavigationStack。
 struct SettingsView: View {
     @State private var appearance = AppearanceMode.current
+    /// 手动导入运动记录的结果提示，导完给一句人话。
+    @State private var importNotice: String?
     @ObservedObject private var health = HealthKitManager.shared
 
     var body: some View {
@@ -68,11 +70,25 @@ struct SettingsView: View {
                     .tint(Theme.accent)
                 Toggle("睡眠辅助分析", isOn: $health.sleepSync)
                     .tint(Theme.accent)
+
+                Button("从「健康」导入运动记录") {
+                    importNotice = "读取中…"
+                    WorkoutSync.importRecent(days: 90) { summary in
+                        importNotice = summary?.message ?? "先打开上面的「接入 Apple 健康」。"
+                    }
+                }
+                .tint(Theme.accent)
+
+                if let importNotice {
+                    Text(importNotice)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
         } header: {
             sectionHeader("健康数据", symbol: "heart.text.square")
         } footer: {
-            Text("体重会与「健康」App 双向同步，步数/锻炼计入每日消耗，睡眠用于趋势参考。数据只在本机处理。")
+            Text("体重会与「健康」App 双向同步；步数与锻炼会自动导入成运动记录、并计入每日消耗；睡眠用于趋势参考。数据只在本机处理。")
                 .font(.caption)
         }
     }
