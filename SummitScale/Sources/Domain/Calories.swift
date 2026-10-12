@@ -39,11 +39,11 @@ enum ActivityLevel: String, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .sedentary: return "几乎不运动，整天坐着"
-        case .light: return "每周运动 1～3 次"
-        case .moderate: return "每周运动 3～5 次"
-        case .active: return "每周运动 6～7 次"
-        case .veryActive: return "体力工作，或每天高强度训练"
+        case .sedentary: return "日常上班坐着、不专门运动。想单独记录爬山/健身等运动就选这档，避免重复计算"
+        case .light: return "每周运动 1～3 次，已算进消耗，不再单独记运动"
+        case .moderate: return "每周运动 3～5 次，已算进消耗，不再单独记运动"
+        case .active: return "每周运动 6～7 次，已算进消耗，不再单独记运动"
+        case .veryActive: return "体力工作或每天高强度训练，已算进消耗，不再单独记运动"
         }
     }
 
