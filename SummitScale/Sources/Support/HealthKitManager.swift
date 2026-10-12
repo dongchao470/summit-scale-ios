@@ -323,6 +323,41 @@ final class HealthKitManager: ObservableObject {
         store.execute(query)
     }
 
+    // MARK: - 每日步行+跑步距离（无锻炼样本时做每日汇总用）
+
+    /// 近 days 天每天的步行+跑步距离（公里），按日升序；没权限时返回空数组。
+    func dailyWalkingDistance(days: Int, completion: @escaping ([(day: Date, kilometers: Double)]) -> Void) {
+        guard authorized, enabled, activitySync,
+              let type = HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning) else {
+            Task { @MainActor in completion([]) }
+            return
+        }
+        let calendar = Calendar.current
+        let anchor = calendar.startOfDay(for: Date())
+        let startDay = calendar.date(byAdding: .day, value: -(max(days, 1) - 1), to: anchor) ?? anchor
+        let predicate = HKQuery.predicateForSamples(withStart: startDay, end: Date(), options: .strictStartDate)
+        var interval = DateComponents()
+        interval.day = 1
+
+        let query = HKStatisticsCollectionQuery(
+            quantityType: type,
+            quantitySamplePredicate: predicate,
+            options: .cumulativeSum,
+            anchorDate: anchor,
+            intervalComponents: interval
+        )
+        query.initialResultsHandler = { _, collection, _ in
+            var out: [(day: Date, kilometers: Double)] = []
+            collection?.enumerateStatistics(from: startDay, to: Date()) { stat, _ in
+                let day = calendar.startOfDay(for: stat.startDate)
+                let meters = stat.sumQuantity()?.doubleValue(for: .meter()) ?? 0
+                out.append((day: day, kilometers: meters / 1000))
+            }
+            Task { @MainActor in completion(out) }
+        }
+        store.execute(query)
+    }
+
     // MARK: - 睡眠：昨晚时长（小时）
 
     func lastNightSleepHours(completion: @escaping (Double?) -> Void) {
