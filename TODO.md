@@ -580,3 +580,57 @@ Info.plist 短版本 0.4.3 / 构建号 14 / 最低系统 16.0。
 
 **已知遗留**：套餐「改完再记」里新加或改过的条目写 `protein/carbs/fat = 0`
 （v0.4.1 起，本轮未动）；`FoodImages.map` 那次崩溃用户未再报告，本轮未触碰。
+
+## 0.5.12（build 32）心率接入 —— 2026-10-12
+
+**为什么做**：用户报「步行 7 公里、步长、心率都拿不到」。核对后：步行+跑步距离 0.5.10 已读进来；
+**心率权限 App 早就申请过**（`Support/HealthKitManager.swift` 第 83 行读权限里有 `.heartRate`，
+文件尾部还有 `lastNightHeartRate`），真正缺的是「读进来 → 落库 → 显示」这条链；
+步长（健康里的「步行步长」）App 从未申请读权限，本轮没碰。
+
+**改动**（7 个文件，+281 行）
+- `Support/HealthKitManager.swift`：新增 `dailyHeartRate(days:completion:)`
+  （`HKStatisticsCollectionQuery` + `.discreteAverage` / `.discreteMax`，按天升序、只回有数据的天）
+  与 `heartRateStats(from:to:completion:)`（单次锻炼时段，读不到回 0）。
+- `Data/Models.swift` + `Data/Persistence.swift`：`ActivityEntry` 加 `averageHeartRate` / `maximumHeartRate`
+  （Double，默认 0 = 无数据）。
+- `Health/WorkoutSync.swift`：第五路查询 `dailyHeartRate`；新增 `applyHeartRate(daily:completion:)` ——
+  日常活动按整天心率取、锻炼按样本时段（`date` → `date + max(duration, 10 分钟)`）取，
+  **顺序查询**（最多 60 条锻炼，避免一次开几十个 HealthKit 查询），只有真补上才回存；
+  导入回执加「带心率的：N 条锻炼、M 天日常」。
+- `Features/Today/TodayView.swift`：运动记录行 `averageHeartRate > 0` 时加「平均 82 · 最高 121 bpm」，
+  为 0 整段不显示、不占位。
+- `Features/Trends/TrendsView.swift`：新增「心率」区块（最高值柱 + 平均值线），整段时间窗无数据则整块不渲染。
+- `Features/Settings/HealthSelfCheckView.swift`：自检页加「心率（近 7 天）」——有采样的天数 +
+  最近一次采样的平均/最高，用来分辨「没权限」还是「健康里就没数据」。
+- `Data/Persistence.swift` 迁移兜底：显式打开 `shouldMigrateStoreAutomatically` /
+  `shouldInferMappingModelAutomatically`；原来「加载失败就删库」改成先把 store 改名成
+  `.broken-backup` 再重建，别把用户数据一次性抹掉。
+
+**踩到的坑（写死记性）**
+1. **版本号是四处，不是两处。** `project.yml` 里除了 `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`，
+   还有写死的 `CFBundleShortVersionString: "x"` / `CFBundleVersion: "y"`（info.properties）。
+   本轮只改了前两处，CI 产出的 **包内构建号仍是 31**（IPA 名也是 build31），而 build setting 已是 32。
+   补改 `CFBundleVersion` 重推才拿到 `build32`。
+   **核对方式**：解出 `Payload/*.app/Info.plist`，用 python `plistlib` 读
+   `CFBundleShortVersionString` / `CFBundleVersion`，不要只看 IPA 文件名。
+2. **子代理的 `write_set` 必须是绝对路径**（`/workspace/summit-scale-ios/...`）。写成仓库相对路径时
+   会被解析到**会话工作区根**，该路径不存在 → `file_edit` 全部被拒（「写入路径不在本分支 write_set」），
+   而分支会「读完文件、零写入」地汇报，看着像干了活实则一个字节没改。派写任务前先核对路径基准。
+3. 嵌套函数（放在 `Task { }` 里那种）不继承 actor 隔离，必须显式 `@MainActor` —— 0.5.10 踩过一次，
+   本轮 `applyHeartRate` 里的递归 `fillWorkout` 沿用这个写法，编译一次过。
+
+**验证**：云编译两次均 success —— run `38249953765`（sha `afc9f20`，整套功能）、
+run `38250424148`（sha `bf66950`，修完构建号）。产物 `SummitScale-0.5.12-build32-unsigned.ipa`
+6569288 字节，sha256 `38b4e599f88581e3a22822b205f50685bba7a2d2e2642b74ef75fb0c338c1855`，
+包内 `0.5.12 / 32 / com.dongchao470.summit-scale`。静态自检：改动文件大括号全配平
+（Today 193/193、Trends 269/269、WorkoutSync 62/62、HealthKitManager 153/153、Models 32/32、
+Persistence 19/19、自检页 40/40）。
+
+**未做真机验证** —— 需用户安装后确认：① 导入回执有没有「带心率的：N 条锻炼、M 天日常」；
+② 今日页运动记录行有没有「平均 … 最高 … bpm」；③ 趋势页有没有「心率」区块；
+④ 设置 →「健康数据自检」→「心率（近 7 天）」有采样天数是否非 0。
+第 ④ 项若为 0，说明健康里这段确实没有心率采样（没戴设备/没授权），不是 App 的问题。
+
+**已知遗留**：步长（步行步长）与步行速度、双足支撑时间等 iPhone 独有的「步行」指标仍未申请读权限；
+`Store.updateFood` 营养素按比例回写；食品库无图 / 联网搜索质量；TODO 第 5 节清单 —— 本轮均未动。
