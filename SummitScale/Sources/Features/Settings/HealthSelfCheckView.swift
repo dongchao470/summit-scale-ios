@@ -52,7 +52,7 @@ struct HealthSelfCheckView: View {
 
             Section("开关") {
                 LabeledContent("健康读取", value: health.enabled ? "开" : "关")
-                LabeledContent("步数与锻炼计入消耗", value: health.activitySync ? "开" : "关")
+                LabeledContent("健康活跃消耗计入消耗", value: health.activitySync ? "开" : "关")
                 LabeledContent("版本", value: Self.appVersion)
             }
 

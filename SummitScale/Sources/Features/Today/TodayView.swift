@@ -178,12 +178,29 @@ struct TodayView: View {
         activities.filter { !$0.isDeleted && $0.date >= todayStart }
     }
 
+    /// 今日运动消耗（kcal）。只用一个口径，绝不叠加：
+    /// 健康有数据 → 「健康活跃消耗 + 手动记录」；健康导入的条目（带 externalID，
+    /// 含从活跃消耗汇总出来的「日常活动」）已经包含在健康口径里，再加一遍就是翻倍。
+    /// 健康没数据 → 退回今日记录合计，手动记的运动照样算得进来。
+    private var todayBurnKcal: Double {
+        let manual = todayActivities.filter { ($0.externalID ?? "").isEmpty }.reduce(0) { $0 + $1.kcal }
+        if healthBurn > 0 { return healthBurn + manual }
+        return todayActivities.reduce(0) { $0 + $1.kcal }
+    }
+
+    /// 消耗数字的口径，标出来免得被看成一笔糊涂账。
+    private var burnSourceNote: String {
+        healthBurn > 0
+            ? "消耗 = 健康活跃消耗 + 手动记录 · 不含基础代谢"
+            : "消耗 = 今日记录合计 · 未读到健康活跃消耗"
+    }
+
     private var ledger: DayLedger? {
         guard let budget = budget else { return nil }
         return DayLedger(
             budget: budget,
             intakeKcal: todayFoods.reduce(0) { $0 + $1.kcal },
-            burnKcal: todayActivities.reduce(0) { $0 + $1.kcal } + healthBurn
+            burnKcal: todayBurnKcal
         )
     }
 
@@ -758,6 +775,10 @@ struct TodayView: View {
                         symbol: "point.topleft.down.curvedto.point.bottomright.up"
                     )
                 }
+
+                Text(burnSourceNote)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
 
                 ForEach(todayActivities, id: \.objectID) { activity in
                     HStack(spacing: 10) {

@@ -77,6 +77,7 @@ final class HealthKitManager: ObservableObject {
         var types: Set<HKObjectType> = [
             HKObjectType.quantityType(forIdentifier: .bodyMass)!,
             HKObjectType.quantityType(forIdentifier: .stepCount)!,
+            HKObjectType.quantityType(forIdentifier: .distanceWalkingRunning)!,
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
             HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
             HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
@@ -212,31 +213,17 @@ final class HealthKitManager: ObservableObject {
         let start = calendar.startOfDay(for: Date())
         let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
 
-        var total = 0.0
-        let group = DispatchGroup()
-
-        // 活动能量
-        if let burned = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
-            group.enter()
-            let q = HKStatisticsQuery(quantityType: burned, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stat, _ in
-                total += stat?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
-                group.leave()
-            }
-            store.execute(q)
+        // 只取「活动能量」这一项。走路消耗本来就已含在活动能量里，
+        // 之前再按步数乘 0.04 加一遍，配合「日常活动」条目就成了三倍。
+        guard let burned = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else {
+            completion(0)
+            return
         }
-
-        // 步数折算：平均步幅 0.7m、每步约消耗 0.04 kcal（粗估，仅参考）。
-        if let steps = HKQuantityType.quantityType(forIdentifier: .stepCount) {
-            group.enter()
-            let q = HKStatisticsQuery(quantityType: steps, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stat, _ in
-                let count = stat?.sumQuantity()?.doubleValue(for: .count()) ?? 0
-                total += count * 0.04
-                group.leave()
-            }
-            store.execute(q)
+        let query = HKStatisticsQuery(quantityType: burned, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stat, _ in
+            let kcal = stat?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
+            Task { @MainActor in completion(kcal) }
         }
-
-        group.notify(queue: .main) { completion(total) }
+        store.execute(query)
     }
 
     // MARK: - 活动明细：今日步数 / 锻炼消耗 / 锻炼时长

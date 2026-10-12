@@ -66,7 +66,7 @@ struct SettingsView: View {
             if health.enabled {
                 Toggle("体重双向同步", isOn: $health.weightSync)
                     .tint(Theme.accent)
-                Toggle("步数与锻炼计入消耗", isOn: $health.activitySync)
+                Toggle("健康活跃消耗计入消耗", isOn: $health.activitySync)
                     .tint(Theme.accent)
                 Toggle("睡眠辅助分析", isOn: $health.sleepSync)
                     .tint(Theme.accent)
@@ -92,7 +92,7 @@ struct SettingsView: View {
         } header: {
             sectionHeader("健康数据", symbol: "heart.text.square")
         } footer: {
-            Text("体重会与「健康」App 双向同步；步数与锻炼会自动导入成运动记录、并计入每日消耗；睡眠用于趋势参考。数据只在本机处理。")
+            Text("体重会与「健康」App 双向同步；健康的步数、距离与活跃消耗会自动导入成运动记录，首页「消耗」按健康活跃消耗计、不含基础代谢；睡眠用于趋势参考。数据只在本机处理。")
                 .font(.caption)
         }
     }
