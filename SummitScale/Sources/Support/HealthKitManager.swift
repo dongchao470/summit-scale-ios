@@ -124,7 +124,7 @@ final class HealthKitManager: ObservableObject {
     /// HKObserverQuery 没有 invalidate，停掉要用 store.stopQuery。
     private func stopWeightObserver() {
         if let query = weightObserver {
-            store.stopQuery(query)
+            store.stop(query)
             weightObserver = nil
         }
     }
