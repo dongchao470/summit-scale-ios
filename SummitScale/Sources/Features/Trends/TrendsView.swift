@@ -44,6 +44,8 @@ struct TrendsView: View {
     private var profiles: FetchedResults<UserProfile>
 
     @State private var span: Span = .week
+    /// 健康提供的昨晚睡眠时长（小时），未启用为 nil。
+    @State private var sleepHours: Double?
 
     // MARK: - 派生数据
 
@@ -167,6 +169,9 @@ struct TrendsView: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle("趋势")
+            .onAppear {
+                HealthKitManager.shared.lastNightSleepHours { sleepHours = $0 }
+            }
         }
     }
 
@@ -180,6 +185,22 @@ struct TrendsView: View {
             Text(text)
         }
         .textCase(nil)
+    }
+
+    /// 昨晚睡眠行：只在健康接入且读到数据时出现。
+    @ViewBuilder
+    private var sleepRow: some View {
+        if let hours = sleepHours, hours > 0 {
+            HStack {
+                Label("昨晚睡眠", systemImage: "bed.double")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(String(format: "%.1f 小时", hours))
+                    .font(.subheadline.weight(.medium).monospacedDigit())
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 
     private var summarySection: some View {
@@ -327,6 +348,9 @@ struct TrendsView: View {
             }
             .textCase(nil)
         }
+
+        // 睡眠行：只在实际读到数据时渲染（sleepRow 内部自判）。
+        sleepRow
     }
 
     private var intakeSection: some View {

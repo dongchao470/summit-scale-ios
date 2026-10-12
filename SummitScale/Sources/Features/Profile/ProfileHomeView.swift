@@ -29,6 +29,8 @@ struct ProfileHomeView: View {
             List {
                 profileHeroSection
                 profileSection
+                appearanceSection
+                healthSection
                 templateSection
                 aboutSection
             }
@@ -166,6 +168,78 @@ struct ProfileHomeView: View {
 
     private func age(from birthDate: Date) -> Int {
         Calendar.current.dateComponents([.year], from: birthDate, to: Date()).year ?? 0
+    }
+
+    // MARK: - 外观
+
+    @State private var appearance = AppearanceMode.current
+
+    private var appearanceSection: some View {
+        Section {
+            Picker("外观", selection: $appearance) {
+                ForEach(AppearanceMode.allCases) { mode in
+                    Label(mode.title, systemImage: mode.symbol).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: appearance) { mode in
+                mode.activate()
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Image(systemName: "circle.lefthalf.filled")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(Theme.accent)
+                    .accessibilityHidden(true)
+                Text("外观")
+            }
+            .textCase(nil)
+        }
+    }
+
+    // MARK: - 健康数据
+
+    @ObservedObject private var health = HealthKitManager.shared
+
+    private var healthSection: some View {
+        Section {
+            Toggle(isOn: Binding(
+                get: { health.enabled },
+                set: { on in
+                    if on {
+                        health.requestAccess()
+                    } else {
+                        health.disable()
+                    }
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("接入 Apple 健康")
+                    Text(health.statusText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .tint(Theme.accent)
+
+            if health.enabled {
+                Toggle("体重双向同步", isOn: $health.weightSync)
+                    .tint(Theme.accent)
+                Toggle("步数与锻炼计入消耗", isOn: $health.activitySync)
+                    .tint(Theme.accent)
+                Toggle("睡眠辅助分析", isOn: $health.sleepSync)
+                    .tint(Theme.accent)
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Image(systemName: "heart.text.square")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(Theme.accent)
+                    .accessibilityHidden(true)
+                Text("健康数据")
+            }
+            .textCase(nil)
+        }
     }
 
     // MARK: - 套餐

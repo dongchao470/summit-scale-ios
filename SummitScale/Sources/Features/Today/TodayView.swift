@@ -44,6 +44,21 @@ struct TodayView: View {
     @State private var expandedGroups: Set<String> = []
     /// 顶部热量环的绘制动画开关，onAppear 置 true，由 0 扫到当前百分比。
     @State private var ringAnimate = false
+    /// 健康提供的今日步数/锻炼消耗（kcal），未启用为 0。
+    @State private var healthBurnKcal: Double = 0
+    /// 健康推送的最新体重；非 nil 时展示并提醒是否替换当前记录。
+    @State private var healthWeightKg: Double?
+
+    private var healthBurn: Double {
+        healthBurnKcal
+    }
+
+    /// 从健康读今日活动消耗；未授权/未开启时回调 0，UI 不展示。
+    private func refreshHealthData() {
+        HealthKitManager.shared.todayActivityKcal { kcal in
+            healthBurnKcal = kcal
+        }
+    }
 
     // MARK: - 派生数据
 
@@ -71,7 +86,7 @@ struct TodayView: View {
         return DayLedger(
             budget: budget,
             intakeKcal: todayFoods.reduce(0) { $0 + $1.kcal },
-            burnKcal: todayActivities.reduce(0) { $0 + $1.kcal }
+            burnKcal: todayActivities.reduce(0) { $0 + $1.kcal } + healthBurn
         )
     }
 
@@ -120,6 +135,12 @@ struct TodayView: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle(greetingTitle)
+            .onAppear(perform: refreshHealthData)
+            .onReceive(NotificationCenter.default.publisher(for: .healthWeightChanged)) { note in
+                if let kg = note.userInfo?["kilograms"] as? Double {
+                    healthWeightKg = kg
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     recordMenu

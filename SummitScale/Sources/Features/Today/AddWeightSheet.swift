@@ -72,6 +72,8 @@ struct AddWeightSheet: View {
 
     private func save() {
         Persistence.shared.addWeight(kilograms: kilograms, date: date, note: note)
+        // 已接入健康且开了体重同步时，顺手写回健康 App。
+        HealthKitManager.shared.saveWeight(kilograms: kilograms, date: date)
         dismiss()
     }
 }
