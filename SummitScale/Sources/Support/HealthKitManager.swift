@@ -80,6 +80,7 @@ final class HealthKitManager: ObservableObject {
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
             HKObjectType.quantityType(forIdentifier: .appleExerciseTime)!,
             HKObjectType.categoryType(forIdentifier: .sleepAnalysis)!,
+            HKObjectType.quantityType(forIdentifier: .heartRate)!,
         ]
         return types
     }
@@ -342,6 +343,86 @@ final class HealthKitManager: ObservableObject {
                 seconds += ce.timeIntervalSince(cs)
             }
             Task { @MainActor in completion(seconds / 3600) }
+        }
+        store.execute(query)
+    }
+
+    // MARK: - 睡眠：近 days 天分期（深睡 / 浅睡 / REM，单位小时）
+
+    /// 一晚的睡眠分期时长（小时），按「醒来那天」归属。
+    struct SleepStageDay {
+        let day: Date
+        var deep: Double = 0
+        var core: Double = 0
+        var rem: Double = 0
+        var total: Double { deep + core + rem }
+        var hasData: Bool { total > 0 }
+    }
+
+    /// 近 days 天每晚睡眠分期（小时），按日升序补齐，无数据的日子各项为 0。
+    /// 样本按「结束时刻所在日」归属（当天早上醒来算当天）。
+    func dailySleepStages(days: Int, completion: @escaping ([SleepStageDay]) -> Void) {
+        guard authorized, enabled, sleepSync,
+              let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+            Task { @MainActor in completion([]) }
+            return
+        }
+        let calendar = Calendar.current
+        let anchor = calendar.startOfDay(for: Date())
+        // 往前多取一天，覆盖跨午夜入睡的样本。
+        let start = calendar.date(byAdding: .day, value: -(max(days, 1)), to: anchor) ?? anchor
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
+
+        let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
+            var byDay: [Date: SleepStageDay] = [:]
+            for sample in (samples as? [HKCategorySample]) ?? [] {
+                let hours = sample.endDate.timeIntervalSince(sample.startDate) / 3600
+                guard hours > 0 else { continue }
+                let day = calendar.startOfDay(for: sample.endDate)
+                var rec = byDay[day] ?? SleepStageDay(day: day)
+                switch sample.value {
+                case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
+                    rec.deep += hours
+                case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
+                    rec.rem += hours
+                case HKCategoryValueSleepAnalysis.asleepCore.rawValue,
+                     HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue:
+                    // 核心睡眠 +（旧设备无分期的）通用睡眠，都并入「浅睡」。
+                    rec.core += hours
+                default:
+                    break // inBed / awake 不计入睡眠时长
+                }
+                byDay[day] = rec
+            }
+            var result: [SleepStageDay] = []
+            var cursor = calendar.date(byAdding: .day, value: -(max(days, 1) - 1), to: anchor) ?? anchor
+            while cursor <= anchor {
+                result.append(byDay[cursor] ?? SleepStageDay(day: cursor))
+                guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+                cursor = next
+            }
+            Task { @MainActor in completion(result) }
+        }
+        store.execute(query)
+    }
+
+    // MARK: - 心率：近夜间平均 / 最低（bpm）
+
+    /// 过去约 16 小时内的平均与最低心率（bpm），近似「昨晚睡眠心率」。读不到为 nil。
+    func lastNightHeartRate(completion: @escaping (_ average: Double?, _ lowest: Double?) -> Void) {
+        guard authorized, enabled, sleepSync,
+              let hrType = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+            Task { @MainActor in completion(nil, nil) }
+            return
+        }
+        let start = Calendar.current.date(byAdding: .hour, value: -16, to: Date()) ?? Date()
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        let query = HKStatisticsQuery(quantityType: hrType, quantitySamplePredicate: predicate,
+                                      options: [.discreteAverage, .discreteMin]) { _, stat, _ in
+            let avg = stat?.averageQuantity()?.doubleValue(for: unit)
+            let low = stat?.minimumQuantity()?.doubleValue(for: unit)
+            Task { @MainActor in completion(avg, low) }
         }
         store.execute(query)
     }

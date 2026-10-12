@@ -50,6 +50,11 @@ struct TrendsView: View {
     @State private var dailyStepPoints: [DayValue] = []
     /// 记录热度中被点选的那一天，nil 表示未展开详情卡。
     @State private var selectedHeatmapDay: DayValue?
+    /// 健康提供的近 N 天睡眠分期（深/浅/REM），未启用或无数据为空。
+    @State private var sleepStageDays: [HealthKitManager.SleepStageDay] = []
+    /// 昨晚睡眠期间的平均 / 最低心率（bpm），未读到为 nil。
+    @State private var sleepHeartAverage: Double?
+    @State private var sleepHeartLowest: Double?
 
     // MARK: - 派生数据
 
@@ -173,6 +178,84 @@ struct TrendsView: View {
         return 0...(max(peak * 1.15, 500))
     }
 
+    // MARK: - 睡眠派生数据
+
+    /// 读健康睡眠分期 + 夜间心率，span 变化或页面出现时调用。
+    private func loadSleep(days: Int) {
+        HealthKitManager.shared.dailySleepStages(days: days) { stages in
+            sleepStageDays = stages
+        }
+        HealthKitManager.shared.lastNightHeartRate { avg, low in
+            sleepHeartAverage = avg
+            sleepHeartLowest = low
+        }
+    }
+
+    /// 有睡眠数据的日子（去掉全 0 的空白夜）。
+    private var sleepLoggedDays: [HealthKitManager.SleepStageDay] {
+        sleepStageDays.filter { $0.hasData }
+    }
+
+    /// 平均每晚总睡眠（小时），只按有数据的夜计算。
+    private var averageSleep: Double {
+        guard !sleepLoggedDays.isEmpty else { return 0 }
+        return sleepLoggedDays.reduce(0) { $0 + $1.total } / Double(sleepLoggedDays.count)
+    }
+
+    /// 最近一个有数据的夜晚，用于副文「昨晚 深睡…」。
+    private var latestSleepNight: HealthKitManager.SleepStageDay? {
+        sleepLoggedDays.last
+    }
+
+    /// 睡眠堆叠柱的 Y 轴上界，留 15% 余量，至少 8 小时。
+    private var sleepDomain: ClosedRange<Double> {
+        let peak = sleepStageDays.map { $0.total }.max() ?? 0
+        return 0...(max(peak * 1.15, 8))
+    }
+
+    /// 把分期小时数格式化成「X 小时 Y 分」或「Y 分」。
+    private func sleepDurationText(_ hours: Double) -> String {
+        let total = Int((hours * 60).rounded())
+        let h = total / 60
+        let m = total % 60
+        if h > 0 { return "\(h):\(String(format: "%02d", m))" }
+        return "\(m) 分"
+    }
+
+    // MARK: - 运动消耗趋势派生数据
+
+    /// 每天运动消耗（kcal），区间内补齐，无记录的日子为 0。供运动趋势柱。
+    private var dailyBurn: [DayValue] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        var byDay: [Date: Double] = [:]
+        for entry in activities where entry.date >= startDay {
+            byDay[calendar.startOfDay(for: entry.date), default: 0] += entry.kcal
+        }
+        var result: [DayValue] = []
+        var cursor = startDay
+        while cursor <= today {
+            result.append(DayValue(day: cursor, value: byDay[cursor] ?? 0))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        return result
+    }
+
+    /// 运动消耗日均（只算有运动的日子），作柱状图参考虚线。
+    private var averageBurnLoggedDay: Double {
+        let logged = dailyBurn.filter { $0.value > 0 }
+        guard !logged.isEmpty else { return 0 }
+        return logged.reduce(0) { $0 + $1.value } / Double(logged.count)
+    }
+
+    private var burnDomain: ClosedRange<Double> {
+        let peak = dailyBurn.map { $0.value }.max() ?? 0
+        return 0...(max(peak * 1.15, 300))
+    }
+
+    private var burnActiveDays: Int { dailyBurn.filter { $0.value > 0 }.count }
+
     // MARK: - 视图
 
     var body: some View {
@@ -192,6 +275,7 @@ struct TrendsView: View {
                 recordSection
                 weightSection
                 intakeSection
+                sleepSection
                 activitySection
             }
             .listStyle(.insetGrouped)
@@ -201,11 +285,13 @@ struct TrendsView: View {
                 HealthKitManager.shared.dailySteps(days: span.days) { points in
                     dailyStepPoints = points.map { DayValue(day: $0.day, value: $0.steps) }
                 }
+                loadSleep(days: span.days)
             }
             .onChange(of: span) { newSpan in
                 HealthKitManager.shared.dailySteps(days: newSpan.days) { points in
                     dailyStepPoints = points.map { DayValue(day: $0.day, value: $0.steps) }
                 }
+                loadSleep(days: newSpan.days)
             }
         }
     }
@@ -536,9 +622,6 @@ struct TrendsView: View {
             }
             .textCase(nil)
         }
-
-        // 睡眠行：只在实际读到数据时渲染（sleepRow 内部自判）。
-        sleepRow
     }
 
     private var intakeSection: some View {
@@ -589,11 +672,136 @@ struct TrendsView: View {
         }
     }
 
+    // MARK: - 睡眠结构（方案 C：深/浅/REM 堆叠柱）
+
+    @ViewBuilder
+    private var sleepSection: some View {
+        if !sleepLoggedDays.isEmpty {
+            Section {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(sleepDurationText(averageSleep))
+                            .font(Theme.number(34))
+                        Text("平均每晚")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Chart {
+                        ForEach(sleepStageDays, id: \.day) { day in
+                            BarMark(x: .value("日期", day.day), y: .value("深睡", day.deep))
+                                .foregroundStyle(Theme.accent)
+                                .cornerRadius(2)
+                            BarMark(x: .value("日期", day.day), y: .value("浅睡", day.core))
+                                .foregroundStyle(Theme.accent.opacity(0.5))
+                                .cornerRadius(2)
+                            BarMark(x: .value("日期", day.day), y: .value("REM", day.rem))
+                                .foregroundStyle(Theme.accent.opacity(0.26))
+                                .cornerRadius(2)
+                        }
+                    }
+                    .chartYScale(domain: sleepDomain)
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: span == .week ? 7 : 4)) { _ in
+                            AxisGridLine()
+                            AxisValueLabel(format: .dateTime.month().day())
+                        }
+                    }
+                    .frame(height: 170)
+
+                    HStack(spacing: 16) {
+                        sleepLegend("深睡", Theme.accent)
+                        sleepLegend("浅睡", Theme.accent.opacity(0.5))
+                        sleepLegend("REM", Theme.accent.opacity(0.26))
+                    }
+
+                    if let night = latestSleepNight {
+                        Text(sleepNightSummary(night))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let avg = sleepHeartAverage {
+                        HStack(spacing: 6) {
+                            Image(systemName: "heart")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(Theme.accent)
+                                .accessibilityHidden(true)
+                            if let low = sleepHeartLowest {
+                                Text("夜间心率 平均 \(Int(avg.rounded())) · 最低 \(Int(low.rounded())) bpm")
+                            } else {
+                                Text("夜间心率 平均 \(Int(avg.rounded())) bpm")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                sectionHeader("睡眠结构", symbol: "bed.double")
+            }
+        }
+    }
+
+    /// 睡眠图例小圆点 + 文字。
+    private func sleepLegend(_ title: String, _ color: Color) -> some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 9, height: 9)
+            Text(title)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    /// 最近一夜分期副文：昨晚 深睡 X · 浅睡 Y · REM Z。
+    private func sleepNightSummary(_ night: HealthKitManager.SleepStageDay) -> String {
+        "昨晚 \(sleepDurationText(night.total)) · 深睡 \(sleepDurationText(night.deep)) · 浅睡 \(sleepDurationText(night.core)) · REM \(sleepDurationText(night.rem))"
+    }
+
     private var activitySection: some View {
         Section {
             if activities.filter({ $0.date >= startDay }).isEmpty {
                 emptyHint("这段时间还没有运动记录")
             } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(Fmt.kcal(totalBurn))
+                            .font(Theme.number(30))
+                        Text("千卡 · \(burnActiveDays) 天有运动")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Chart {
+                        ForEach(dailyBurn) { item in
+                            BarMark(
+                                x: .value("日期", item.day),
+                                y: .value("消耗", item.value)
+                            )
+                            .foregroundStyle(Theme.accent.opacity(0.85))
+                            .cornerRadius(4)
+                        }
+
+                        if averageBurnLoggedDay > 0 {
+                            RuleMark(y: .value("日均", averageBurnLoggedDay))
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 3]))
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                    }
+                    .chartYScale(domain: burnDomain)
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: span == .week ? 7 : 4)) { _ in
+                            AxisGridLine()
+                            AxisValueLabel(format: .dateTime.month().day())
+                        }
+                    }
+                    .frame(height: 150)
+                }
+                .padding(.vertical, 4)
+
                 let recent = Array(activities.filter { $0.date >= startDay }.prefix(6))
                 ForEach(recent, id: \.objectID) { entry in
                     HStack(spacing: 10) {
