@@ -34,6 +34,9 @@ enum WorkoutSync {
         /// 刷新过数字的「日常活动」天数。
         var dailyUpdated = 0
         var unavailable = false
+        /// 补上心率的锻炼条数 / 日常活动天数（诊断用：为 0 说明这台设备/这段时间没有心率采样）。
+        var heartRateWorkouts = 0
+        var heartRateDays = 0
 
         var message: String {
             if unavailable {
@@ -46,7 +49,10 @@ enum WorkoutSync {
             if dailyTouched > 0 {
                 parts.append("按步数与活跃消耗汇总 \(dailyTouched) 天日常活动")
             }
-            if inserted == 0 && dailyTouched == 0 {
+            if heartRateWorkouts > 0 || heartRateDays > 0 {
+                parts.append("带心率的：\(heartRateWorkouts) 条锻炼、\(heartRateDays) 天日常")
+            }
+            if inserted == 0 && dailyTouched == 0 && heartRateWorkouts == 0 && heartRateDays == 0 {
                 parts.append("没有可落库的新数据")
             }
             return parts.joined(separator: "，") + "。"
@@ -72,14 +78,19 @@ enum WorkoutSync {
             var steps: [(day: Date, steps: Double)]?
             var energy: [(day: Date, kcal: Double)]?
             var distance: [(day: Date, kilometers: Double)]?
+            var heartRates: [(day: Date, average: Double, maximum: Double)]?
 
-            // 四路查询都在主线程回调，齐了再一起写库，避免一小时内写四次。
+            // 五路查询都在主线程回调，齐了再一起写库，避免一小时内写五次。
             @MainActor func finishIfReady() {
                 guard let w = workouts, let s = steps, let e = energy, let d = distance else { return }
                 var summary = insert(w)
                 summary.workoutCount = w.count
                 upsertDaily(steps: s, energy: e, distance: d, workoutDays: workoutDays(in: w), into: &summary)
-                completion?(summary)
+                applyHeartRate(daily: heartRates ?? []) { workouts, days in
+                    summary.heartRateWorkouts = workouts
+                    summary.heartRateDays = days
+                    completion?(summary)
+                }
             }
 
             health.recentWorkouts(days: days) { records in
@@ -98,7 +109,68 @@ enum WorkoutSync {
                 distance = points
                 finishIfReady()
             }
+            health.dailyHeartRate(days: days) { points in
+                heartRates = points
+                finishIfReady()
+            }
         }
+    }
+
+    // MARK: - 心率补齐
+
+    /// 把心率补到已落库的记录上：日常活动按整天的心率取，锻炼按样本时段取；拿不到就留 0。
+    /// 顺序查询、不并发，避免一次开几十个 HealthKit 查询；只有补上了才回存。
+    @MainActor
+    static func applyHeartRate(daily: [(day: Date, average: Double, maximum: Double)],
+                               completion: @escaping (_ workouts: Int, _ days: Int) -> Void) {
+        let context = Persistence.shared.container.viewContext
+        let calendar = Calendar.current
+        let since = calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+        let request = ActivityEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "(source == %@ OR source == %@) AND date >= %@",
+                                        source, dailySource, since as NSDate)
+        request.sortDescriptors = ActivityEntry.dateDescending
+        request.fetchLimit = 400
+        let entries = (try? context.fetch(request)) ?? []
+
+        var dayMap: [Date: (average: Double, maximum: Double)] = [:]
+        for point in daily where point.average > 0 {
+            dayMap[calendar.startOfDay(for: point.day)] = (point.average, point.maximum)
+        }
+
+        var filledDays = 0
+        for entry in entries where entry.source == dailySource {
+            guard let stats = dayMap[calendar.startOfDay(for: entry.date)], stats.average > 0 else { continue }
+            entry.averageHeartRate = stats.average
+            entry.maximumHeartRate = stats.maximum
+            filledDays += 1
+        }
+
+        let workoutEntries = Array(entries.filter { $0.source == source }.prefix(60))
+
+        @MainActor func fillWorkout(at index: Int, hits: Int, days: Int) {
+            guard index < workoutEntries.count else {
+                if hits > 0 || days > 0 { Persistence.shared.save() }
+                completion(hits, days)
+                return
+            }
+            let entry = workoutEntries[index]
+            let start = entry.date
+            let end = start.addingTimeInterval(max(entry.durationMinutes * 60, 600))
+            HealthKitManager.shared.heartRateStats(from: start, to: end) { average, maximum in
+                Task { @MainActor in
+                    var next = hits
+                    if average > 0 {
+                        entry.averageHeartRate = average
+                        entry.maximumHeartRate = maximum
+                        next += 1
+                    }
+                    fillWorkout(at: index + 1, hits: next, days: days)
+                }
+            }
+        }
+
+        fillWorkout(at: 0, hits: 0, days: filledDays)
     }
 
     // MARK: - 锻炼样本

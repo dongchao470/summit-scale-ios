@@ -600,6 +600,69 @@ final class HealthKitManager: ObservableObject {
         }
         store.execute(query)
     }
+
+    // MARK: - 心率（次/分）
+
+    /// 近 N 天按天的心率平均 / 最高。只返回有数据的天（没授权、健康里没采样就不返回）。
+    func dailyHeartRate(days: Int, completion: @escaping (_ points: [(day: Date, average: Double, maximum: Double)]) -> Void) {
+        guard enabledByUser, activitySync,
+              let type = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+            Task { @MainActor in completion([]) }
+            return
+        }
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        let calendar = Calendar.current
+        let anchor = calendar.startOfDay(for: Date())
+        let startDay = calendar.date(byAdding: .day, value: -(max(days, 1) - 1), to: anchor) ?? anchor
+        let end = calendar.date(byAdding: .day, value: 1, to: anchor) ?? Date()
+        let predicate = HKQuery.predicateForSamples(withStart: startDay, end: end, options: .strictStartDate)
+        var interval = DateComponents()
+        interval.day = 1
+
+        let query = HKStatisticsCollectionQuery(quantityType: type,
+                                               quantitySamplePredicate: predicate,
+                                               options: [.discreteAverage, .discreteMax],
+                                               anchorDate: anchor,
+                                               intervalComponents: interval)
+        query.initialResultsHandler = { _, collection, error in
+            if let error {
+                NSLog("[SummitScale] 读心率失败: \(error)")
+            }
+            var points: [(day: Date, average: Double, maximum: Double)] = []
+            collection?.enumerateStatistics(from: startDay, to: end) { stat, _ in
+                let average = stat.averageQuantity()?.doubleValue(for: unit) ?? 0
+                let maximum = stat.maximumQuantity()?.doubleValue(for: unit) ?? 0
+                if average > 0 {
+                    points.append((day: calendar.startOfDay(for: stat.startDate),
+                                   average: average,
+                                   maximum: maximum))
+                }
+            }
+            Task { @MainActor in completion(points) }
+        }
+        store.execute(query)
+    }
+
+    /// 某个时间段（一次锻炼）的心率平均 / 最高；读不到时回 0。
+    func heartRateStats(from start: Date,
+                        to end: Date,
+                        completion: @escaping (_ average: Double, _ maximum: Double) -> Void) {
+        guard enabledByUser, activitySync,
+              let type = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+            Task { @MainActor in completion(0, 0) }
+            return
+        }
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        let query = HKStatisticsQuery(quantityType: type,
+                                     quantitySamplePredicate: predicate,
+                                     options: [.discreteAverage, .discreteMax]) { _, stat, _ in
+            let average = stat?.averageQuantity()?.doubleValue(for: unit) ?? 0
+            let maximum = stat?.maximumQuantity()?.doubleValue(for: unit) ?? 0
+            Task { @MainActor in completion(average, maximum) }
+        }
+        store.execute(query)
+    }
 }
 
 extension Notification.Name {

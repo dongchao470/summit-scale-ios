@@ -775,6 +775,14 @@ struct TodayView: View {
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
+                            // 心率：只有真读到数据才多这一行；为 0 时整段不出现、不占位。
+                            if let heart = heartRateText(activity) {
+                                Text(heart)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .monospacedDigit()
+                                    .lineLimit(1)
+                            }
                         }
 
                         Spacer(minLength: 4)
@@ -806,6 +814,16 @@ struct TodayView: View {
             parts.append("爬升 \(Int(activity.elevationGainMeters)) 米")
         }
         return parts.isEmpty ? activity.kindValue.title : parts.joined(separator: " · ")
+    }
+
+    /// 心率文案：平均 / 最高 bpm，取整；没读到心率（平均值 <= 0）时返回 nil，界面整段不显示。
+    private func heartRateText(_ entry: ActivityEntry) -> String? {
+        guard entry.averageHeartRate > 0 else { return nil }
+        let average = Int(entry.averageHeartRate.rounded())
+        if entry.maximumHeartRate > 0 {
+            return "平均 \(average) · 最高 \(Int(entry.maximumHeartRate.rounded())) bpm"
+        }
+        return "平均 \(average) bpm"
     }
 
     // MARK: - 动作

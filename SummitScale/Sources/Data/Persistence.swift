@@ -19,13 +19,25 @@ final class Persistence {
             description.url = URL(fileURLWithPath: "/dev/null")
         }
 
+        // 新增字段（心率）靠轻量迁移补齐：显式打开迁移与模型推断，避免默认值变化直接丢库。
+        for description in container.persistentStoreDescriptions {
+            description.shouldMigrateStoreAutomatically = true
+            description.shouldInferMappingModelAutomatically = true
+        }
+
         container.loadPersistentStores { description, error in
             guard let error = error as NSError? else { return }
             NSLog("[SummitScale] store 加载失败: \(error), \(error.userInfo)")
 
             // 自愈：本地存储损坏或模型不兼容时删掉重建，别让用户看到启动即崩。
+            // 先改名留个备份，万一只是模型没迁移上，数据还能捞回来。
             if let url = description.url {
                 let fm = FileManager.default
+                let backup = url.appendingPathExtension("broken-backup")
+                try? fm.removeItem(at: backup)
+                if fm.fileExists(atPath: url.path) {
+                    try? fm.moveItem(at: url, to: backup)
+                }
                 try? fm.removeItem(at: url)
                 try? fm.removeItem(at: url.appendingPathExtension("wal"))
                 try? fm.removeItem(at: url.appendingPathExtension("shm"))
@@ -176,6 +188,8 @@ extension Persistence {
             attribute("createdAt", .dateAttributeType),
             attribute("source", .stringAttributeType, default: "manual"),
             attribute("externalID", .stringAttributeType, optional: true),
+            attribute("averageHeartRate", .doubleAttributeType, default: 0.0),
+            attribute("maximumHeartRate", .doubleAttributeType, default: 0.0),
         ]
         return entity
     }

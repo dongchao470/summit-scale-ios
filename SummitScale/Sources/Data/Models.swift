@@ -167,6 +167,9 @@ final class ActivityEntry: NSManagedObject {
     @NSManaged var createdAt: Date
     @NSManaged var source: String
     @NSManaged var externalID: String?
+    /// 平均 / 最高心率（次/分）。0 表示没有数据：没授权、这台设备没采样、或那段时间没戴。
+    @NSManaged var averageHeartRate: Double
+    @NSManaged var maximumHeartRate: Double
 }
 
 extension ActivityEntry {

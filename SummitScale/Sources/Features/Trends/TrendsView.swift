@@ -57,6 +57,8 @@ struct TrendsView: View {
     /// 昨晚睡眠期间的平均 / 最低心率（bpm），未读到为 nil。
     @State private var sleepHeartAverage: Double?
     @State private var sleepHeartLowest: Double?
+    /// 健康提供的每日心率（只含有数据的日子，日升序），未启用或无数据为空；供心率区块。
+    @State private var heartRatePoints: [HeartRateDay] = []
 
     // MARK: - 派生数据
 
@@ -204,6 +206,30 @@ struct TrendsView: View {
         }
     }
 
+    // MARK: - 心率派生数据
+
+    /// 读健康的每日心率（只返回有数据的天）；无权限或无数据就是空数组，心率区块整体不出现。
+    private func loadHeartRate(days: Int) {
+        HealthKitManager.shared.dailyHeartRate(days: days) { points in
+            heartRatePoints = points
+                .filter { $0.average > 0 }
+                .map { HeartRateDay(day: $0.day, average: $0.average, maximum: $0.maximum) }
+                .sorted { $0.day < $1.day }
+        }
+    }
+
+    /// 区间内平均心率再平均，只按有数据的日子算；没数据为 0。
+    private var averageHeartBpm: Double {
+        guard !heartRatePoints.isEmpty else { return 0 }
+        return heartRatePoints.reduce(0) { $0 + $1.average } / Double(heartRatePoints.count)
+    }
+
+    /// 心率图的 Y 轴上界：留 20% 余量，至少到 120 bpm，免得曲线贴顶。
+    private var heartRateDomain: ClosedRange<Double> {
+        let peak = heartRatePoints.map { $0.maximum }.max() ?? 0
+        return 0...(max(peak * 1.2, 120))
+    }
+
     /// 有睡眠数据的日子（去掉全 0 的空白夜）。
     private var sleepLoggedDays: [HealthKitManager.SleepStageDay] {
         sleepStageDays.filter { $0.hasData }
@@ -301,6 +327,7 @@ struct TrendsView: View {
                 weightSection
                 intakeSection
                 sleepSection
+                heartRateSection
                 activitySection
             }
             .listStyle(.insetGrouped)
@@ -312,6 +339,7 @@ struct TrendsView: View {
                 }
                 loadSleep(days: span.days)
                 loadHealthBurn(days: span.days)
+                loadHeartRate(days: span.days)
                 // 顺手把「健康」里的锻炼补进运动记录，列表和趋势才不是空的。
                 WorkoutSync.importRecent(days: span.days)
             }
@@ -321,6 +349,7 @@ struct TrendsView: View {
                 }
                 loadSleep(days: newSpan.days)
                 loadHealthBurn(days: newSpan.days)
+                loadHeartRate(days: newSpan.days)
                 WorkoutSync.importRecent(days: newSpan.days)
             }
         }
@@ -791,6 +820,89 @@ struct TrendsView: View {
         "昨晚 \(sleepDurationText(night.total)) · 深睡 \(sleepDurationText(night.deep)) · 浅睡 \(sleepDurationText(night.core)) · REM \(sleepDurationText(night.rem))"
     }
 
+    // MARK: - 心率（每日平均主线 + 最高参考）
+
+    /// 心率区块：主线是按天平均心率，淡强调色柱是当天最高；整个时间窗无心率数据时整块不出现。
+    @ViewBuilder
+    private var heartRateSection: some View {
+        if !heartRatePoints.isEmpty {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("\(Int(averageHeartBpm.rounded()))")
+                            .font(Theme.number(34))
+                        Text("bpm · 日均 · \(heartRatePoints.count) 天有数据")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Chart {
+                        ForEach(heartRatePoints) { point in
+                            // 最高心率作背景副柱，淡强调色，不抢主线。
+                            BarMark(
+                                x: .value("日期", point.day),
+                                y: .value("最高", point.maximum)
+                            )
+                            .foregroundStyle(Theme.accent.opacity(0.24))
+                            .cornerRadius(4)
+
+                            LineMark(
+                                x: .value("日期", point.day),
+                                y: .value("平均", point.average)
+                            )
+                            .interpolationMethod(.catmullRom)
+                            .foregroundStyle(Theme.accent)
+
+                            PointMark(
+                                x: .value("日期", point.day),
+                                y: .value("平均", point.average)
+                            )
+                            .foregroundStyle(Theme.accent)
+                            .symbolSize(26)
+                        }
+                    }
+                    .chartYScale(domain: heartRateDomain)
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: span == .week ? 7 : 4)) { _ in
+                            AxisGridLine()
+                            AxisValueLabel(format: .dateTime.month().day())
+                        }
+                    }
+                    .frame(height: 170)
+
+                    HStack(spacing: 16) {
+                        HStack(spacing: 5) {
+                            Capsule()
+                                .fill(Theme.accent)
+                                .frame(width: 14, height: 3)
+                            Text("平均 bpm")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        HStack(spacing: 5) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Theme.accent.opacity(0.24))
+                                .frame(width: 10, height: 10)
+                            Text("最高 bpm")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .accessibilityHidden(true)
+
+                    if let latest = heartRatePoints.last {
+                        Text("最近 \(Fmt.relativeDay(latest.day)) 平均 \(Int(latest.average.rounded())) · 最高 \(Int(latest.maximum.rounded())) bpm")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            } header: {
+                sectionHeader("心率", symbol: "heart.fill")
+            }
+        }
+    }
+
     private var activitySection: some View {
         Section {
             if healthBurnPoints.isEmpty && activities.filter({ $0.date >= startDay }).isEmpty {
@@ -884,6 +996,14 @@ struct TrendsView: View {
     private struct DayValue: Identifiable {
         let day: Date
         let value: Double
+        var id: Date { day }
+    }
+
+    /// 一天的心率（bpm）：平均作主线，最高作背景参考。
+    private struct HeartRateDay: Identifiable {
+        let day: Date
+        let average: Double
+        let maximum: Double
         var id: Date { day }
     }
 

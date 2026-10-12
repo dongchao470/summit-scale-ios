@@ -55,6 +55,8 @@ struct HealthSelfCheckView: View {
                 LabeledContent("步数与锻炼计入消耗", value: health.activitySync ? "开" : "关")
                 LabeledContent("版本", value: Self.appVersion)
             }
+
+            HeartRateSelfCheckSection()
         }
         .listStyle(.insetGrouped)
         .navigationTitle("健康数据自检")
@@ -125,6 +127,36 @@ struct HealthSelfCheckView: View {
         health.dailyWalkingDistance(days: Self.days) { points in
             distance = points
             render()
+        }
+    }
+}
+
+/// 只干一件事：把近 7 天的心率采样摊开，好判断「拿不到心率」是没权限还是健康里就没数据。
+private struct HeartRateSelfCheckSection: View {
+    private static let days = 7
+
+    @State private var dayCount = 0
+    @State private var latestLabel = "—"
+    @State private var latestBpm = "—"
+
+    var body: some View {
+        Section {
+            LabeledContent("有采样的天数", value: "\(dayCount) / \(Self.days) 天")
+            LabeledContent("最近一次采样 \(latestLabel)", value: latestBpm)
+        } header: {
+            Text("心率（近 7 天）")
+        } footer: {
+            Text("心率靠设备自动采样。这里全是 0 天或「—」，说明「健康」这段时间就没有心率数据（没戴设备、没授权、或传感器没记录），App 不会凭空生成。")
+        }
+        .onAppear {
+            HealthKitManager.shared.dailyHeartRate(days: Self.days) { points in
+                dayCount = points.count
+                guard let last = points.last else { return }
+                let formatter = DateFormatter()
+                formatter.dateFormat = "M月d日"
+                latestLabel = formatter.string(from: last.day)
+                latestBpm = "平均 \(Int(last.average.rounded())) · 最高 \(Int(last.maximum.rounded())) bpm"
+            }
         }
     }
 }
