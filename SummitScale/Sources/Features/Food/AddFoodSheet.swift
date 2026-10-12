@@ -20,6 +20,12 @@ struct AddFoodSheet: View {
     @State private var protein100Text = ""
     @State private var carbs100Text = ""
     @State private var fat100Text = ""
+    // 编辑时的原始份量与营养基准：改克数时按比例自动折算热量和三大营养素。
+    @State private var editBaseGrams: Double = 0
+    @State private var editBaseKcal: Double = 0
+    @State private var editBaseProtein: Double = 0
+    @State private var editBaseCarbs: Double = 0
+    @State private var editBaseFat: Double = 0
     @FocusState private var focusedField: Field?
 
     /// 需要自己收键盘的输入框。
@@ -72,6 +78,12 @@ struct AddFoodSheet: View {
             _manualGramsText = State(
                 initialValue: entry.grams > 0 ? Fmt.grams(entry.grams) : ""
             )
+            // 记下原始份量/营养，改克数时按比例折算。
+            _editBaseGrams = State(initialValue: entry.grams)
+            _editBaseKcal = State(initialValue: entry.kcal)
+            _editBaseProtein = State(initialValue: entry.protein)
+            _editBaseCarbs = State(initialValue: entry.carbs)
+            _editBaseFat = State(initialValue: entry.fat)
         }
     }
 
@@ -324,6 +336,14 @@ struct AddFoodSheet: View {
                     .multilineTextAlignment(.trailing)
                     .focused($focusedField, equals: .manualGrams)
                     .frame(width: 88)
+                    .onChange(of: manualGramsText) { text in
+                        // 编辑已有记录且原份量有效时，改克数自动按比例折算热量。
+                        guard editingEntry != nil, editBaseGrams > 0,
+                              let g = Double(text.trimmingCharacters(in: .whitespaces)), g > 0
+                        else { return }
+                        let ratio = g / editBaseGrams
+                        manualKcalText = String(Int((editBaseKcal * ratio).rounded()))
+                    }
                 Text("克").foregroundColor(.secondary)
             }
             Text("手填的条目只有热量，不参与三大营养素统计；份量可以留空。")
@@ -339,12 +359,17 @@ struct AddFoodSheet: View {
 
         // 编辑已有记录：只回写这一条，不新建，配图和来源原样保留。
         if let entry = editingEntry {
+            // 份量相对原值的缩放比，用来同步折算三大营养素；原份量为 0 时不缩放。
+            let ratio = editBaseGrams > 0 ? (manualGrams / editBaseGrams) : 1
             store.updateFood(
                 entry,
                 name: manualName,
                 meal: meal,
                 grams: manualGrams,
                 kcal: manualKcal,
+                protein: editBaseProtein * ratio,
+                carbs: editBaseCarbs * ratio,
+                fat: editBaseFat * ratio,
                 date: date
             )
             dismiss()

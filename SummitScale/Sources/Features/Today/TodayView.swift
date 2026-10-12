@@ -9,10 +9,12 @@ struct TodayView: View {
     @FetchRequest(sortDescriptors: WeightEntry.dateDescending, animation: .default)
     private var weights: FetchedResults<WeightEntry>
 
-    @FetchRequest(sortDescriptors: FoodEntry.dateDescending, animation: .default)
+    // 不加 animation：带动画删除时 List 会在淡出帧里继续渲染已删除的 FoodEntry，
+    // 访问它的 @NSManaged 非可选属性会触发 Core Data fault 直接崩。无动画即刻移除最稳。
+    @FetchRequest(sortDescriptors: FoodEntry.dateDescending)
     private var foods: FetchedResults<FoodEntry>
 
-    @FetchRequest(sortDescriptors: ActivityEntry.dateDescending, animation: .default)
+    @FetchRequest(sortDescriptors: ActivityEntry.dateDescending)
     private var activities: FetchedResults<ActivityEntry>
 
     @FetchRequest(
@@ -167,11 +169,13 @@ struct TodayView: View {
     private var todayStart: Date { Calendar.current.startOfDay(for: Date()) }
 
     private var todayFoods: [FoodEntry] {
-        foods.filter { $0.date >= todayStart }
+        // 过滤已删除对象：删除瞬间 FetchedResults 还没来得及剔除时，
+        // 读取已删 entry 的属性会崩，这里兜一道。
+        foods.filter { !$0.isDeleted && $0.date >= todayStart }
     }
 
     private var todayActivities: [ActivityEntry] {
-        activities.filter { $0.date >= todayStart }
+        activities.filter { !$0.isDeleted && $0.date >= todayStart }
     }
 
     private var ledger: DayLedger? {
@@ -511,7 +515,7 @@ struct TodayView: View {
                     .foregroundColor(.secondary)
             } else {
                 let split = splitByTemplate(entries)
-                ForEach(split.singles) { entry in
+                ForEach(split.singles, id: \.objectID) { entry in
                     foodRow(entry)
                 }
                 ForEach(split.groups) { group in
@@ -647,7 +651,7 @@ struct TodayView: View {
         .accessibilityLabel(expanded ? "收起\(group.name)的明细" : "展开\(group.name)的明细")
 
         if expanded {
-            ForEach(group.entries) { entry in
+            ForEach(group.entries, id: \.objectID) { entry in
                 foodRow(entry)
             }
         }
@@ -755,7 +759,7 @@ struct TodayView: View {
                     )
                 }
 
-                ForEach(todayActivities) { activity in
+                ForEach(todayActivities, id: \.objectID) { activity in
                     HStack(spacing: 10) {
                         Image(systemName: activity.kindValue.symbol)
                             .font(.footnote.weight(.semibold))

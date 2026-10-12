@@ -183,12 +183,18 @@ extension Persistence {
         meal: MealType,
         grams: Double,
         kcal: Double,
+        protein: Double,
+        carbs: Double,
+        fat: Double,
         date: Date
     ) {
         entry.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         entry.mealType = meal.rawValue
         entry.grams = grams
         entry.kcal = kcal
+        entry.protein = protein
+        entry.carbs = carbs
+        entry.fat = fat
         entry.date = date
         save()
     }
