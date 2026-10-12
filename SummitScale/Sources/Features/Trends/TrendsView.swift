@@ -48,6 +48,8 @@ struct TrendsView: View {
     @State private var sleepHours: Double?
     /// 健康提供的每日步数（含今天），未启用为空；供体重×步数叠图。
     @State private var dailyStepPoints: [DayValue] = []
+    /// 记录热度中被点选的那一天，nil 表示未展开详情卡。
+    @State private var selectedHeatmapDay: DayValue?
 
     // MARK: - 派生数据
 
@@ -272,7 +274,20 @@ struct TrendsView: View {
     private var recordSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                RecordHeatmap(days: heatmapIntake, target: budget?.intakeTarget)
+                RecordHeatmap(
+                    days: heatmapIntake,
+                    target: budget?.intakeTarget,
+                    selectedDay: selectedHeatmapDay?.day,
+                    onSelect: { day in
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                            if selectedHeatmapDay?.day == day.day {
+                                selectedHeatmapDay = nil
+                            } else {
+                                selectedHeatmapDay = day
+                            }
+                        }
+                    }
+                )
 
                 HStack(spacing: 6) {
                     Text("少")
@@ -291,6 +306,11 @@ struct TrendsView: View {
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
+
+                if let selected = selectedHeatmapDay {
+                    heatmapDetailCard(for: selected)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
@@ -300,6 +320,99 @@ struct TrendsView: View {
             sectionHeader("记录热度", symbol: "square.grid.2x2.fill")
         }
     }
+
+    /// 热度格点选后的当天详情卡：日期 + 档位标签 + 摄入占比 + 记录条数 +（有则）体重。
+    private func heatmapDetailCard(for item: DayValue) -> some View {
+        let target = budget?.intakeTarget
+        let (tag, dot) = heatmapTag(value: item.value, target: target)
+        let count = recordCount(on: item.day)
+        let kg = weight(on: item.day)
+        let hasIntake = item.value > 0
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(Self.heatmapDayFormatter.string(from: item.day))
+                    .font(.subheadline).fontWeight(.semibold)
+                Spacer()
+                HStack(spacing: 5) {
+                    Circle().fill(dot).frame(width: 7, height: 7)
+                    Text(tag).font(.caption).foregroundColor(.secondary)
+                }
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        selectedHeatmapDay = nil
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.body).foregroundColor(Color(.systemGray3))
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 4)
+            }
+            .padding(.bottom, 8)
+            Divider()
+            VStack(spacing: 8) {
+                if hasIntake {
+                    heatmapDetailRow(title: "摄入", value: "\(Int(item.value.rounded())) kcal",
+                                     sub: target.map { "占目标 \(Int((item.value / $0 * 100).rounded()))%" })
+                    heatmapDetailRow(title: "记录", value: "\(count) 条", sub: nil)
+                } else {
+                    HStack {
+                        Text("这天没有饮食记录")
+                            .font(.footnote).foregroundColor(.secondary)
+                        Spacer()
+                    }
+                }
+                if let kg = kg {
+                    heatmapDetailRow(title: "体重", value: "\(Fmt.kg(kg)) kg", sub: nil)
+                }
+            }
+            .padding(.top, 8)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .fill(Color(.tertiarySystemGroupedBackground)))
+    }
+
+    private func heatmapDetailRow(title: String, value: String, sub: String?) -> some View {
+        HStack(spacing: 6) {
+            Text(title).font(.subheadline).foregroundColor(.secondary)
+            Spacer()
+            if let sub = sub {
+                Text(sub).font(.caption).foregroundColor(.secondary)
+            }
+            Text(value).font(.subheadline).fontWeight(.semibold).monospacedDigit()
+        }
+    }
+
+    /// 和热力图同一套比例逻辑，但给人看的文案与标签圆点色。
+    private func heatmapTag(value: Double, target: Double?) -> (String, Color) {
+        guard value > 0 else { return ("未记录", Color(.systemGray3)) }
+        guard let t = target, t > 0 else { return ("已记录", Theme.accent) }
+        let r = value / t
+        if r < 0.5 { return ("吃得少", Theme.accent.opacity(0.4)) }
+        if r < 0.85 { return ("偏少", Theme.accent.opacity(0.65)) }
+        if r <= 1.1 { return ("达标", Theme.accent) }
+        return ("偏多", Theme.accent)
+    }
+
+    /// 当天记录了几条饮食。
+    private func recordCount(on day: Date) -> Int {
+        let cal = Calendar.current
+        return foods.filter { cal.isDate($0.date, inSameDayAs: day) }.count
+    }
+
+    /// 当天体重（最新一次称重），没有则 nil。weights 已按日期倒序。
+    private func weight(on day: Date) -> Double? {
+        let cal = Calendar.current
+        return weights.first { cal.isDate($0.date, inSameDayAs: day) }?.kilograms
+    }
+
+    private static let heatmapDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.setLocalizedDateFormatFromTemplate("MMMdEEEE")
+        return f
+    }()
 
     /// 次级小统计：灰标题 + 黑数字，水平均分，参考风格里的底排小字。
     private func miniStat(title: String, value: String, unit: String) -> some View {
@@ -526,6 +639,8 @@ struct TrendsView: View {
     private struct RecordHeatmap: View {
         let days: [DayValue]
         let target: Double?
+        var selectedDay: Date? = nil
+        var onSelect: ((DayValue) -> Void)? = nil
 
         /// 把一天折算成 0–4 的热度档位：0 没记录，1–4 越吃越深。
         private func level(for value: Double) -> Int {
@@ -547,6 +662,12 @@ struct TrendsView: View {
             case 4: return Theme.accent
             default: return Color(.systemGray5)
             }
+        }
+
+        /// 当前格是否为被点选的那一天。
+        private func isSelected(_ cell: DayValue?) -> Bool {
+            guard let cell = cell, let selectedDay = selectedDay else { return false }
+            return Calendar.current.isDate(cell.day, inSameDayAs: selectedDay)
         }
 
         /// 周列视图数据：每列是该周日一到日（按系统首日）的 7 格，空缺为 nil。
@@ -579,13 +700,23 @@ struct TrendsView: View {
                         VStack(spacing: gap) {
                             ForEach(0..<7, id: \.self) { r in
                                 let cell = columns[c][r]
+                                let selected = isSelected(cell)
                                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                                     .fill(cell == nil ? Color.clear : RecordHeatmap.color(for: level(for: cell!.value)))
                                     .frame(width: size, height: size)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                            .strokeBorder(Color.primary, lineWidth: selected ? 1.5 : 0)
+                                    )
                                     .opacity(cell == nil ? 0 : 1)
-                                    .scaleEffect(cell == nil ? 0.5 : 1)
+                                    .scaleEffect(cell == nil ? 0.5 : (selected ? 1.18 : 1))
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        if let cell = cell { onSelect?(cell) }
+                                    }
                                     .animation(.spring(response: 0.35, dampingFraction: 0.75)
                                         .delay(Double(c * 7 + r) * 0.01), value: cell?.value)
+                                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selected)
                             }
                         }
                     }
