@@ -84,6 +84,10 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+
+                NavigationLink("健康数据自检（近 7 天）") {
+                    HealthSelfCheckView()
+                }
             }
         } header: {
             sectionHeader("健康数据", symbol: "heart.text.square")

@@ -229,6 +229,16 @@ enum WorkoutSync {
         return formatter
     }()
 
+    /// 自检用：本地已落库的、来自「健康」的记录条数（锻炼 / 每日汇总分开数）。
+    static func storedCounts() -> (workouts: Int, daily: Int) {
+        let context = Persistence.shared.container.viewContext
+        let request = ActivityEntry.fetchRequest()
+        request.predicate = NSPredicate(format: "source == %@ OR source == %@", source, dailySource)
+        let entries = (try? context.fetch(request)) ?? []
+        let daily = entries.filter { $0.source == dailySource }.count
+        return (workouts: entries.count - daily, daily: daily)
+    }
+
     private static func dailyID(for day: Date) -> String {
         "daily-" + dayFormatter.string(from: day)
     }
