@@ -56,15 +56,15 @@ enum WorkoutSync {
     }
 
     /// 写库：同一个 workout UUID 只写一次；不碰手动记的条目。
-    private static func insert(_ records: [WorkoutRecord]) -> Summary {
+    private static func insert(_ records: [HealthKitManager.WorkoutRecord]) -> Summary {
         var summary = Summary()
         guard !records.isEmpty else { return summary }
 
         let context = Persistence.shared.container.viewContext
         let request = ActivityEntry.fetchRequest()
-        request.predicate = NSPredicate(format: "externalID IN %@", records.map(\.externalID))
+        request.predicate = NSPredicate(format: "externalID IN %@", records.map { $0.externalID })
         request.fetchLimit = records.count
-        let existing = Set(((try? context.fetch(request)) ?? []).compactMap(\.externalID))
+        let existing = Set(((try? context.fetch(request)) ?? []).compactMap { $0.externalID })
 
         for record in records {
             guard !existing.contains(record.externalID) else {
