@@ -34,7 +34,7 @@ final class HealthKitManager: ObservableObject {
         get { defaults.bool(forKey: Keys.weightSync) }
         set {
             defaults.set(newValue, forKey: Keys.weightSync)
-            if newValue { observeWeight() } else { weightObserver?.invalidate() }
+            if newValue { observeWeight() } else { stopWeightObserver() }
         }
     }
 
@@ -118,7 +118,15 @@ final class HealthKitManager: ObservableObject {
 
     func disable() {
         defaults.set(false, forKey: Keys.enabled)
-        weightObserver?.invalidate()
+        stopWeightObserver()
+    }
+
+    /// HKObserverQuery 没有 invalidate，停掉要用 store.stopQuery。
+    private func stopWeightObserver() {
+        if let query = weightObserver {
+            store.stopQuery(query)
+            weightObserver = nil
+        }
     }
 
     // MARK: - 体重：读（健康 → App）
@@ -157,7 +165,7 @@ final class HealthKitManager: ObservableObject {
     /// 监听健康 App 里的体重变化，变化时读最新值回写 App。
     private func observeWeight() {
         guard let type = HKObjectType.quantityType(forIdentifier: .bodyMass) else { return }
-        weightObserver?.invalidate()
+        stopWeightObserver()
         let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, handler, _ in
             self?.latestWeightKilograms { kg in
                 if let kg {

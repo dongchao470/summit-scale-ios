@@ -288,6 +288,7 @@ struct TrendsView: View {
         .accessibilityLabel("\(title) \(value) \(unit)")
     }
 
+    @ViewBuilder
     private var weightSection: some View {
         Section {
             if weightPoints.count < 2 {
