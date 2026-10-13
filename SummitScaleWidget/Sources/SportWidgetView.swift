@@ -223,7 +223,22 @@ private struct SportDotRow: View {
 
 private let barGreen = Color(red: 0.20, green: 0.83, blue: 0.60)   // #34D399
 private let barBlue = Color(red: 0.376, green: 0.647, blue: 0.980) // #60A5FA
-private let barOrange = Theme.accentOrange
+private let barOrange = Color(red: 0.98, green: 0.58, blue: 0.235) // #FA943C（Theme 无橙色，本地定义）
+
+// MARK: - 更新时间
+
+private let updateTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "HH:mm"
+    return f
+}()
+
+/// 右下角「更新 HH:mm」，取快照写入时间 savedAt。
+private func updatedLabel(_ snapshot: WidgetSnapshot) -> Text {
+    Text("更新 \(updateTimeFormatter.string(from: snapshot.savedAt))")
+        .font(.system(size: 9, weight: .medium))
+        .foregroundColor(Theme.secondaryText)
+}
 
 // MARK: - Widget 注册
 
