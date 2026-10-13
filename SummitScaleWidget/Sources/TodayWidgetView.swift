@@ -2,15 +2,11 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-/// widget 根视图：小号 / 中号两种布局，没数据或快照跨天就退到引导态。
+/// widget 根视图：小号 / 中号两种布局，没数据就退到引导态。
 ///
-/// v0.6.1 重做版式，专治「环被挤扁、元素叠在一起」：
-/// 1. 尺寸不再写死 72 / 92pt：外层 GeometryReader 给出真实可用边长，环放进 VStack 的
-///    弹性格里取正方形——空间不够先缩环，绝不压到上下两行文字。
-/// 2. 所有文本 lineLimit(1) + minimumScaleFactor(0.6)，主数字 monospacedDigit，只缩不挤不截断。
-/// 3. 间距走 snap4() 吸到 4 的倍数；字号用 clamp() 按边长比例夹上下限，随尺寸连续变化。
-/// 4. 层级：环心主数字（最大最粗） > 进度环 > 次级统计 > 说明文字与时间。
-///    颜色只取 Theme，无渐变背景、无阴影；数据新旧靠 savedAt 显示的「更新于 HH:mm」体现。
+/// 版式刻意只用「固定尺寸 + Spacer 弹性」，**不碰 GeometryReader 按比例分配**：
+/// 0.6.2 那版就是那么写的，结果桌面整块白屏——连空态文字都不显示，只能回退。
+/// 想再玩花活，先在真机上验证过再说。
 struct TodayWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: TodayEntry
@@ -18,24 +14,17 @@ struct TodayWidgetView: View {
     var body: some View {
         Group {
             if let snapshot = entry.snapshot, snapshot.isToday {
-                let stale = isStale(snapshot, at: entry.date)
                 switch family {
                 case .systemMedium:
-                    MediumLayout(snapshot: snapshot, isStale: stale)
+                    MediumLayout(snapshot: snapshot)
                 default:
-                    SmallLayout(snapshot: snapshot, isStale: stale)
+                    SmallLayout(snapshot: snapshot)
                 }
             } else {
-                // 跨天（isToday == false）与从没同步过都走空态，避免桌面整天挂昨天的数字。
-                EmptyLayout(kind: entry.snapshot == nil ? .noData : .expired)
+                EmptyLayout()
             }
         }
         .widgetCanvas()
-    }
-
-    /// 快照写入超过 1 小时视为陈旧：不拦内容，只在时间旁挂一个小图标提示可能没同步。
-    private func isStale(_ snapshot: WidgetSnapshot, at date: Date) -> Bool {
-        date.timeIntervalSince(snapshot.savedAt) > 60 * 60
     }
 }
 
@@ -54,350 +43,232 @@ private extension View {
     }
 }
 
-// MARK: - 尺度与时间工具
-
-/// 夹上下限：小尺寸下算出来的值别变成 0 或负数。
-private func clamp(_ value: CGFloat, _ lower: CGFloat, _ upper: CGFloat) -> CGFloat {
-    min(max(value, lower), upper)
-}
-
-/// 间距一律吸到 4 的倍数，整屏节奏统一。
-private func snap4(_ value: CGFloat) -> CGFloat {
-    max(4, (value / 4).rounded() * 4)
-}
-
-/// 只显示「几点几分」，用来交代这份数字是几点同步的。
-private enum WidgetClock {
-    private static let formatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.setLocalizedDateFormatFromTemplate("Hm")
-        return formatter
-    }()
-
-    static func time(_ date: Date) -> String {
-        formatter.string(from: date)
-    }
-}
-
 // MARK: - 环
 
-/// 进度环：底圈 track + 角向渐变的填充（浅色起步、收尾用满强度），圆头收口。
 private struct Ring: View {
     let progress: Double
     let isOver: Bool
-    let diameter: CGFloat
+    let size: CGFloat
     let lineWidth: CGFloat
 
+    /// 底圈轨道 + 一段角向渐变的进度弧。比纯色描边多一点层次，
+    /// 但仍然只是 `Circle().trim()`，不做任何尺寸测量。
     var body: some View {
         ZStack {
             Circle()
                 .strokeBorder(Theme.track, lineWidth: lineWidth)
             Circle()
-                .trim(from: 0, to: clamp(CGFloat(progress), 0, 1))
+                .trim(from: 0, to: clamp01(progress))
                 .stroke(
                     AngularGradient(
-                        gradient: Gradient(colors: [tint.opacity(0.45), tint]),
+                        gradient: Gradient(colors: isOver
+                            ? [Theme.warning.opacity(0.7), Theme.warning]
+                            : [Theme.accent.opacity(0.6), Theme.accent]),
                         center: .center,
-                        startAngle: .degrees(0),
-                        endAngle: .degrees(360)
+                        startAngle: .degrees(-90),
+                        endAngle: .degrees(270)
                     ),
                     style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
         }
-        .frame(width: diameter, height: diameter)
+        .frame(width: size, height: size)
     }
-
-    /// 只有超支才切警示色，其余一律主题蓝。
-    private var tint: Color { isOver ? Theme.warning : Theme.accent }
 }
 
-/// 环 + 环心读数。环在所在格子里取正方形，读左右各留 22% 半径的安全边，
-/// 所以「12800」这种长数字也只会缩字号，不会压到描边或溢出。
-private struct RingReadout: View {
-    let snapshot: WidgetSnapshot
+/// 进度只接受 0…1。宁可画成空环，也不能把 NaN / 无穷丢给 `trim`——
+/// 那种值会让整条路径画不出来。
+private func clamp01(_ value: Double) -> Double {
+    guard value.isFinite else { return 0 }
+    return min(max(value, 0), 1)
+}
 
-    var body: some View {
-        GeometryReader { geo in
-            let side = max(24, min(geo.size.width, geo.size.height))
-            let lineWidth = clamp(side * 0.11, 5, 12)
-            let numberSize = clamp(side * 0.27, 13, 30)
-            let labelSize = clamp(side * 0.11, 8, 11)
+// MARK: - 时间
 
-            ZStack {
-                Ring(
-                    progress: snapshot.progress,
-                    isOver: snapshot.isOverBudget,
-                    diameter: side,
-                    lineWidth: lineWidth
-                )
+private enum WidgetClock {
+    private static let formatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale.current
+        f.setLocalizedDateFormatFromTemplate("Hm")
+        return f
+    }()
 
-                VStack(spacing: 0) {
-                    Text(Fmt.kcal(abs(snapshot.remainingKcal)))
-                        .font(Theme.number(numberSize, weight: .bold))
-                        .foregroundColor(snapshot.isOverBudget ? Theme.warning : Theme.primaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                    Text(snapshot.isOverBudget ? "已超出" : "还可吃")
-                        .font(.system(size: labelSize, weight: .medium))
-                        .foregroundColor(Theme.secondaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                }
-                .padding(.horizontal, side * 0.22)
-            }
-            .frame(width: geo.size.width, height: geo.size.height)
-        }
+    static func short(_ date: Date) -> String { formatter.string(from: date) }
+
+    /// 快照超过 1 小时没动过就配个同步图标——别让人以为这是实时值。
+    static func isStale(_ date: Date) -> Bool {
+        Date().timeIntervalSince(date) > 3600
     }
 }
 
 // MARK: - 小号
 
-/// 小号：一行标题（含更新时间）+ 弹性环 + 一行三项次要数据。
-/// 中间那段是弹性的——高度不够时先缩环，头和脚的位置永远不动。
 private struct SmallLayout: View {
     let snapshot: WidgetSnapshot
-    let isStale: Bool
 
     var body: some View {
-        GeometryReader { geo in
-            let side = min(geo.size.width, geo.size.height)
-            let gap = snap4(side * 0.05)
-            let titleSize = clamp(side * 0.10, 9, 12)
-            let footSize = clamp(side * 0.11, 9, 13)
-
-            VStack(spacing: gap) {
-                header(titleSize: titleSize)
-                RingReadout(snapshot: snapshot)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                footer(size: footSize)
-            }
-            .frame(width: geo.size.width, height: geo.size.height)
-        }
-    }
-
-    private func header(titleSize: CGFloat) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "flame.fill")
-                .font(.system(size: titleSize * 0.85, weight: .bold))
-                .foregroundColor(Theme.accent)
-                .accessibilityHidden(true)
-            Text("今日")
-                .font(.system(size: titleSize, weight: .semibold))
-                .foregroundColor(Theme.primaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-
-            Spacer(minLength: 4)
-
-            if isStale {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: titleSize * 0.8, weight: .semibold))
+        VStack(spacing: 6) {
+            HStack(spacing: 4) {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(Theme.accent)
+                Text("今日")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Theme.secondaryText)
+                Spacer(minLength: 0)
+                if WidgetClock.isStale(snapshot.savedAt) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(Theme.tertiaryText)
+                }
+                Text(WidgetClock.short(snapshot.savedAt))
+                    .font(Theme.number(10, weight: .medium))
                     .foregroundColor(Theme.tertiaryText)
-                    .accessibilityHidden(true)
             }
-            // 小号只放「HH:mm」，交代这份数字是几点同步的。
-            Text(WidgetClock.time(snapshot.savedAt))
-                .font(Theme.number(titleSize * 0.95, weight: .medium))
-                .foregroundColor(Theme.tertiaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-        }
-    }
 
-    /// 三项等宽平分，每项最多 1/3 宽，数字长了就缩字号，绝不横向溢出。
-    private func footer(size: CGFloat) -> some View {
-        HStack(spacing: 4) {
-            footStat("fork.knife", Fmt.kcal(snapshot.intakeKcal), size: size)
-            footStat("flame.fill", Fmt.kcal(snapshot.burnKcal), size: size)
-            footStat("figure.walk", stepsLabel, size: size)
-        }
-    }
+            ZStack {
+                Ring(
+                    progress: snapshot.progress,
+                    isOver: snapshot.isOverBudget,
+                    size: 72,
+                    lineWidth: 9
+                )
+                VStack(spacing: -1) {
+                    Text(Fmt.kcal(abs(snapshot.remainingKcal)))
+                        .font(Theme.number(21, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundColor(snapshot.isOverBudget ? Theme.warning : Theme.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                    Text(snapshot.isOverBudget ? "已超出" : "还可吃")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(Theme.secondaryText)
+                }
+            }
+            .frame(maxWidth: .infinity)
 
-    private func footStat(_ icon: String, _ value: String, size: CGFloat) -> some View {
-        HStack(spacing: 2) {
-            Image(systemName: icon)
-                .font(.system(size: size * 0.8, weight: .semibold))
-                .foregroundColor(Theme.accent)
-                .accessibilityHidden(true)
-            Text(value)
-                .font(Theme.number(size, weight: .semibold))
-                .foregroundColor(Theme.secondaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+            HStack(spacing: 0) {
+                footStat("flame.fill", Fmt.kcal(snapshot.burnKcal))
+                Spacer(minLength: 8)
+                footStat("figure.walk", stepsLabel)
+            }
         }
-        .frame(maxWidth: .infinity)
     }
 
     private var stepsLabel: String {
         snapshot.steps.formatted(.number.precision(.fractionLength(0)))
+    }
+
+    private func footStat(_ icon: String, _ value: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(Theme.accent)
+            Text(value)
+                .font(Theme.number(12, weight: .semibold))
+                .monospacedDigit()
+                .foregroundColor(Theme.secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
     }
 }
 
 // MARK: - 中号
 
-/// 中号：左边环当焦点，右边一列「今日 · 目标」+ 2x2 统计 + 底行更新时间。
-/// 右侧两列等宽平分（不再用 minWidth 硬撑），窗口再窄也只是字号缩，不会挤到截断。
 private struct MediumLayout: View {
     let snapshot: WidgetSnapshot
-    let isStale: Bool
 
     var body: some View {
-        GeometryReader { geo in
-            let ring = clamp(min(geo.size.height * 0.92, geo.size.width * 0.32), 44, geo.size.height)
-            let gap = snap4(geo.size.width * 0.035)
-            let rowGap = snap4(geo.size.height * 0.06)
-            let titleSize = clamp(geo.size.height * 0.105, 10, 13)
-            let labelSize = clamp(geo.size.height * 0.085, 9, 11)
-            let valueSize = clamp(geo.size.height * 0.13, 12, 17)
-
-            HStack(spacing: gap) {
-                RingReadout(snapshot: snapshot)
-                    .frame(width: ring, height: ring)
-
-                VStack(alignment: .leading, spacing: rowGap) {
-                    header(titleSize: titleSize, labelSize: labelSize)
-
-                    HStack(spacing: gap) {
-                        stat("fork.knife", "摄入", Fmt.kcal(snapshot.intakeKcal), labelSize: labelSize, valueSize: valueSize)
-                        stat("flame.fill", "消耗", Fmt.kcal(snapshot.burnKcal), labelSize: labelSize, valueSize: valueSize)
-                    }
-                    HStack(spacing: gap) {
-                        stat("figure.walk", "步数", stepsLabel, labelSize: labelSize, valueSize: valueSize)
-                        stat("location.fill", "距离", String(format: "%.1f", snapshot.distanceKm), labelSize: labelSize, valueSize: valueSize)
-                    }
-
-                    footer(labelSize: labelSize)
+        HStack(spacing: 14) {
+            ZStack {
+                Ring(
+                    progress: snapshot.progress,
+                    isOver: snapshot.isOverBudget,
+                    size: 92,
+                    lineWidth: 11
+                )
+                VStack(spacing: -1) {
+                    Text(Fmt.kcal(abs(snapshot.remainingKcal)))
+                        .font(Theme.number(26, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundColor(snapshot.isOverBudget ? Theme.warning : Theme.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                    Text(snapshot.isOverBudget ? "已超出" : "还可吃")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(Theme.secondaryText)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(width: geo.size.width, height: geo.size.height)
-        }
-    }
 
-    private func header(titleSize: CGFloat, labelSize: CGFloat) -> some View {
-        HStack(spacing: 4) {
-            Text("今日")
-                .font(.system(size: titleSize, weight: .semibold))
-                .foregroundColor(Theme.primaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Text("目标 \(Fmt.kcal(snapshot.targetKcal)) kcal")
-                .font(.system(size: labelSize, weight: .regular))
-                .foregroundColor(Theme.tertiaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 5) {
+                    Text("今日 · 目标 \(Fmt.kcal(snapshot.targetKcal)) kcal")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(Theme.secondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Spacer(minLength: 0)
+                    if WidgetClock.isStale(snapshot.savedAt) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(Theme.tertiaryText)
+                    }
+                    Text(WidgetClock.short(snapshot.savedAt))
+                        .font(Theme.number(10, weight: .medium))
+                        .foregroundColor(Theme.tertiaryText)
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: 14) {
+                    stat("fork.knife", "摄入", Fmt.kcal(snapshot.intakeKcal))
+                    stat("flame.fill", "消耗", Fmt.kcal(snapshot.burnKcal))
+                }
+                HStack(spacing: 14) {
+                    stat("figure.walk", "步数", snapshot.steps.formatted(.number.precision(.fractionLength(0))))
+                    stat("location.fill", "距离", String(format: "%.1f", snapshot.distanceKm))
+                }
+            }
+
             Spacer(minLength: 0)
         }
     }
 
-    /// 底行：数据新旧一眼可见；陈旧时补一个同步图标，不额外占一行。
-    private func footer(labelSize: CGFloat) -> some View {
-        HStack(spacing: 3) {
-            if isStale {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: labelSize * 0.85, weight: .semibold))
-                    .foregroundColor(Theme.tertiaryText)
-                    .accessibilityHidden(true)
-            }
-            Text("更新于 \(WidgetClock.time(snapshot.savedAt))")
-                .font(.system(size: labelSize, weight: .medium))
-                .foregroundColor(Theme.tertiaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func stat(
-        _ icon: String,
-        _ label: String,
-        _ value: String,
-        labelSize: CGFloat,
-        valueSize: CGFloat
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+    private func stat(_ icon: String, _ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 3) {
                 Image(systemName: icon)
-                    .font(.system(size: labelSize * 0.85, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(Theme.accent)
-                    .accessibilityHidden(true)
                 Text(label)
-                    .font(.system(size: labelSize, weight: .medium))
+                    .font(.system(size: 10))
                     .foregroundColor(Theme.tertiaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
             }
             Text(value)
-                .font(Theme.number(valueSize, weight: .bold))
+                .font(Theme.number(15, weight: .semibold))
+                .monospacedDigit()
                 .foregroundColor(Theme.primaryText)
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.7)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .layoutPriority(1)
-    }
-
-    private var stepsLabel: String {
-        snapshot.steps.formatted(.number.precision(.fractionLength(0)))
+        .frame(minWidth: 56, alignment: .leading)
     }
 }
 
 // MARK: - 空态
 
-/// 引导态两种：从没同步过、快照跨天过期。同一个蓝色山形徽标 + 一句话，风格与主体一致。
 private struct EmptyLayout: View {
-    enum Kind {
-        /// 共享通道没数据 / 从没打开过 App。
-        case noData
-        /// 有快照但属于昨天，按过期处理。
-        case expired
-    }
-
-    @Environment(\.widgetFamily) private var family
-    let kind: Kind
-
     var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(Theme.track)
-                    .frame(width: badge, height: badge)
-                Image(systemName: symbol)
-                    .font(.system(size: badge * 0.48, weight: .semibold))
-                    .foregroundColor(Theme.accent)
-                    .accessibilityHidden(true)
-            }
-
-            Text(message)
-                .font(.system(size: textSize, weight: .medium))
+        VStack(spacing: 7) {
+            Image(systemName: "mountain.2.fill")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(Theme.accent)
+            Text("打开「山与秤」同步今日数据")
+                .font(.system(size: 11, weight: .medium))
                 .foregroundColor(Theme.secondaryText)
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.6)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineSpacing(2)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 6)
     }
-
-    private var symbol: String {
-        switch kind {
-        case .noData: return "mountain.2.fill"
-        case .expired: return "clock.arrow.circlepath"
-        }
-    }
-
-    private var message: String {
-        switch kind {
-        case .noData:
-            return "打开「山与秤」同步今日数据"
-        case .expired:
-            return "昨日数据已过期\n打开「山与秤」同步"
-        }
-    }
-
-    private var badge: CGFloat { family == .systemMedium ? 40 : 34 }
-    private var textSize: CGFloat { family == .systemMedium ? 12 : 11 }
 }
