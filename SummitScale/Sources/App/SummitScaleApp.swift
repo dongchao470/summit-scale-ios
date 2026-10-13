@@ -15,8 +15,8 @@ struct SummitScaleApp: App {
             ThemedRootView {
                 RootView()
                     .environment(\.managedObjectContext, persistence.container.viewContext)
-                    // 全 App 统一强调色：玫红。不设的话系统默认走蓝，
-                    // 会和手动涂的 Theme.accent 两种强调色同屏打架（热量环、顶部加号发蓝）。
+                    // 全 App 统一强调色：Theme.accent（系统蓝）。
+                    // 不设的话最外层与内层可能各走一套强调色，同屏打架。
                     .tint(Theme.accent)
             }
         }

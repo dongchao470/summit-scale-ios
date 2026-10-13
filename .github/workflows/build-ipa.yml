@@ -79,9 +79,24 @@ jobs:
           echo "APP=$APP"
           echo "ENT=$ENT"
           test -f "$ENT"
-          # 先试 ldid（社区脚本常用写法：-S 紧跟文件名），失败再用 codesign 做 ad-hoc 签名
-          (brew install ldid >/dev/null 2>&1 && ldid -S"$ENT" "$APP/SummitScale") || echo "ldid 路径失败"
-          codesign --force --sign - --entitlements "$ENT" "$APP/SummitScale" || echo "codesign 失败"
+          sign_one() {
+            local BIN="$1" E="$2"
+            # 先试 ldid（社区脚本常用写法：-S 紧跟文件名），失败再用 codesign 做 ad-hoc 签名
+            (brew install ldid >/dev/null 2>&1 && ldid -S"$E" "$BIN") || echo "ldid 路径失败：$BIN"
+            codesign --force --sign - --entitlements "$E" "$BIN" || echo "codesign 失败：$BIN"
+          }
+          sign_one "$APP/SummitScale" "$ENT"
+          # widget 扩展同样要签：漏了它，扩展就没有 App Group 权限，读不到主 App 写的快照。
+          WENT="SummitScaleWidget/SummitScaleWidget.entitlements"
+          for APPEX in "$APP"/PlugIns/*.appex; do
+            [ -d "$APPEX" ] || continue
+            echo "APPEX=$APPEX"
+            WEXE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APPEX/Info.plist")"
+            echo "WENT=$WENT WEXE=$WEXE"
+            sign_one "$APPEX/$WEXE" "$WENT"
+            codesign -d --entitlements - "$APPEX/$WEXE" 2>&1 || true
+            ldid -e "$APPEX/$WEXE" 2>&1 || true
+          done
           echo "--- 注入结果 ---"
           codesign -d --entitlements - "$APP/SummitScale" 2>&1 || true
           ldid -e "$APP/SummitScale" 2>&1 || true

@@ -204,6 +204,39 @@ struct TodayView: View {
         )
     }
 
+    // MARK: - 小组件快照
+
+    /// 把今日口径打成一份扁平快照给 widget 用。
+    /// 口径必须和 ledger 完全一致：摄入取自食物条目，消耗走 todayBurnKcal，
+    /// 否则桌面和首页又会是两套数字——0.5.13 刚修过一回这种事。
+    private var widgetSnapshot: WidgetSnapshot? {
+        guard let budget = budget else { return nil }
+        return WidgetSnapshot(
+            savedAt: Date(),
+            dayStart: Calendar.current.startOfDay(for: Date()),
+            intakeKcal: todayFoods.reduce(0) { $0 + $1.kcal },
+            targetKcal: budget.intakeTarget,
+            burnKcal: todayBurnKcal,
+            steps: Double(healthActivity.steps),
+            distanceKm: todayActivities.reduce(0) { $0 + $1.distanceKilometers },
+            exerciseMinutes: Double(healthActivity.exerciseMinutes),
+            weightKg: nil,
+            targetWeightKg: nil
+        )
+    }
+
+    /// 变化指纹：吃的、动的、健康同步来的，任一变了就重写快照。
+    private var widgetSignature: String {
+        let foodKcal = todayFoods.reduce(0) { $0 + $1.kcal }
+        let distance = todayActivities.reduce(0) { $0 + $1.distanceKilometers }
+        return "\(todayFoods.count)|\(foodKcal)|\(todayActivities.count)|\(distance)|\(healthActivity.steps)|\(healthBurn)"
+    }
+
+    private func publishWidgetSnapshot() {
+        guard let snapshot = widgetSnapshot else { return }
+        WidgetBridge.publish(snapshot)
+    }
+
     private var macroTotals: (protein: Double, carbs: Double, fat: Double) {
         var totals = (protein: 0.0, carbs: 0.0, fat: 0.0)
         for entry in todayFoods {
@@ -252,7 +285,11 @@ struct TodayView: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle(greetingTitle)
-            .onAppear(perform: refreshHealthData)
+            .onAppear {
+                refreshHealthData()
+                publishWidgetSnapshot()
+            }
+            .onChange(of: widgetSignature) { _ in publishWidgetSnapshot() }
             .onReceive(NotificationCenter.default.publisher(for: .healthWeightChanged)) { note in
                 if let kg = note.userInfo?["kilograms"] as? Double {
                     healthWeightKg = kg

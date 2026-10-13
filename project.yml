@@ -18,6 +18,10 @@ targets:
   SummitScale:
     type: application
     platform: iOS
+    # 小组件扩展：不写 embed 也会嵌，但显式写出来省得以后被误删。
+    dependencies:
+      - target: SummitScaleWidget
+        embed: true
     sources:
       - path: SummitScale/Sources
       - path: SummitScale/Resources
@@ -28,8 +32,8 @@ targets:
       base:
         PRODUCT_NAME: SummitScale
         PRODUCT_BUNDLE_IDENTIFIER: com.dongchao470.summit-scale
-        MARKETING_VERSION: "0.5.13"
-        CURRENT_PROJECT_VERSION: "33"
+        MARKETING_VERSION: "0.6.0"
+        CURRENT_PROJECT_VERSION: "34"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: "NO"
@@ -41,8 +45,8 @@ targets:
       properties:
         CFBundleDisplayName: 山与秤
         CFBundleName: SummitScale
-        CFBundleShortVersionString: "0.5.13"
-        CFBundleVersion: "33"
+        CFBundleShortVersionString: "0.6.0"
+        CFBundleVersion: "34"
         LSRequiresIPhoneOS: true
         UIUserInterfaceStyle: Automatic
         ITSAppUsesNonExemptEncryption: false
@@ -63,3 +67,53 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         NSHealthShareUsageDescription: 读取「健康」里的体重、步数、锻炼、睡眠和心率记录，用于趋势分析和热量换算，数据只在你的手机上处理。
         NSHealthUpdateUsageDescription: 把本 App 记录的体重写入「健康」，保持两边一致。
+
+  # 主屏小组件（小号 + 中号）。只编译「主题 + 格式化 + 共享桥」三个共享文件，
+  # 不碰 Store / CoreData / HealthKit，免得把一个小组件拖成半个 App 的编译量。
+  SummitScaleWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SummitScaleWidget/Sources
+      - path: SummitScale/Sources/Support/Theme.swift
+      - path: SummitScale/Sources/Support/Formatting.swift
+      - path: SummitScale/Sources/Support/WidgetBridge.swift
+    settings:
+      base:
+        PRODUCT_NAME: SummitScaleWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.dongchao470.summit-scale.widget
+        MARKETING_VERSION: "0.6.0"
+        CURRENT_PROJECT_VERSION: "34"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: SummitScaleWidget/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: SummitScaleWidget/SummitScaleWidget.entitlements
+        SKIP_INSTALL: "YES"
+    info:
+      path: SummitScaleWidget/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: 山与秤
+        CFBundleName: SummitScaleWidget
+        CFBundleShortVersionString: "0.6.0"
+        CFBundleVersion: "34"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+# 显式写 scheme：保证 xcodebuild -scheme SummitScale 会把 widget 一起编进 PlugIns，
+# 不依赖 XcodeGen 对隐式 scheme 的默认推断。
+schemes:
+  SummitScale:
+    build:
+      targets:
+        SummitScale: all
+        SummitScaleWidget: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
