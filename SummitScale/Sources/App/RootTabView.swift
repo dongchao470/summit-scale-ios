@@ -73,12 +73,17 @@ struct RootTabView: View {
             Reminders.resyncAll(Persistence.shared.allTemplates())
             checkAutoFill()
             syncWorkouts()
+            // 顺带排一轮后台刷新：上次退后台若没排上（崩溃或被强杀），这里补回来。
+            BackgroundRefresh.schedule()
         }
         .onChange(of: scenePhase) { phase in
             // 从后台回来也查一次，避免早上开了 App 晚上才补账。
             if phase == .active {
                 checkAutoFill()
                 syncWorkouts()
+            } else if phase == .background {
+                // 退到后台时排一轮后台刷新：不打开 App 也要让桌面 widget 有新数字。
+                BackgroundRefresh.schedule()
             }
         }
     }

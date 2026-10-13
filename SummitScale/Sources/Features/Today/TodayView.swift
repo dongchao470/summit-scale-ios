@@ -211,6 +211,11 @@ struct TodayView: View {
     /// 否则桌面和首页又会是两套数字——0.5.13 刚修过一回这种事。
     private var widgetSnapshot: WidgetSnapshot? {
         guard let budget = budget else { return nil }
+        // 手动记录 = 不带 externalID 的条目；健康导入的条目已经含在 healthBurn 口径里，
+        // 拆开写是为了让后台刷新能只替换健康那一半、不碰手动记录。
+        let manualBurn = todayActivities
+            .filter { ($0.externalID ?? "").isEmpty }
+            .reduce(0) { $0 + $1.kcal }
         return WidgetSnapshot(
             savedAt: Date(),
             dayStart: Calendar.current.startOfDay(for: Date()),
@@ -221,7 +226,9 @@ struct TodayView: View {
             distanceKm: todayActivities.reduce(0) { $0 + $1.distanceKilometers },
             exerciseMinutes: Double(healthActivity.exerciseMinutes),
             weightKg: nil,
-            targetWeightKg: nil
+            targetWeightKg: nil,
+            healthBurnKcal: healthBurn,
+            manualBurnKcal: manualBurn
         )
     }
 
@@ -235,6 +242,10 @@ struct TodayView: View {
     private func publishWidgetSnapshot() {
         guard let snapshot = widgetSnapshot else { return }
         WidgetBridge.publish(snapshot)
+        // 锁屏实时活动吃同一份口径，省得桌面、锁屏、首页三套数字。
+        if #available(iOS 16.1, *) {
+            LiveActivityController.shared.sync(snapshot: snapshot)
+        }
     }
 
     private var macroTotals: (protein: Double, carbs: Double, fat: Double) {

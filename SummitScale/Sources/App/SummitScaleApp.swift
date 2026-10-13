@@ -8,6 +8,8 @@ struct SummitScaleApp: App {
     init() {
         // v0.1 的旧爬山记录搬进统一的活动表，只跑一次。
         Persistence.shared.migrateLegacyHikesIfNeeded()
+        // 注册必须发生在启动阶段（系统硬要求），错过这一次，后台刷新就再也不会被唤醒。
+        BackgroundRefresh.register()
     }
 
     var body: some Scene {

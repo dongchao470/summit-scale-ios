@@ -22,6 +22,12 @@ struct WidgetSnapshot: Codable, Equatable {
     var exerciseMinutes: Double
     var weightKg: Double?
     var targetWeightKg: Double?
+    /// 健康活跃消耗（Apple 口径，含锻炼）。
+    /// 后台刷新时读不到 App 里的 CoreData，所以把口径拆开存：后台只替换健康那一半，
+    /// 手动记录保持原值——不拆开就只能二选一，要么丢手动记录、要么后台不刷消耗。
+    var healthBurnKcal: Double
+    /// 手动记录的运动消耗（不含健康导入条目）。
+    var manualBurnKcal: Double
 
     // MARK: - 派生值
     // 与 DayLedger（Sources/Domain/Calories.swift）同一套算法。
@@ -55,7 +61,9 @@ struct WidgetSnapshot: Codable, Equatable {
         distanceKm: 4.6,
         exerciseMinutes: 32,
         weightKg: 70.4,
-        targetWeightKg: 65
+        targetWeightKg: 65,
+        healthBurnKcal: 245,
+        manualBurnKcal: 75
     )
 }
 

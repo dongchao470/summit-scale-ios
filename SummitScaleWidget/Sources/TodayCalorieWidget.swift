@@ -20,11 +20,29 @@ struct TodayProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
-        let entry = TodayEntry(date: Date(), snapshot: WidgetBridge.read())
-        // 15 分钟兜底刷新；主 App 数据一变会主动 reload，正常不必等这一轮。
-        let refresh = Calendar.current.date(byAdding: .minute, value: 15, to: Date())
-            ?? Date().addingTimeInterval(15 * 60)
-        completion(Timeline(entries: [entry], policy: .after(refresh)))
+        let now = Date()
+        let entry = TodayEntry(date: now, snapshot: WidgetBridge.read())
+        // widget 自己只会「重读快照」，快照由主 App 写、由后台刷新补。
+        // 所以这里只决定什么时候再读一次：常规 15 分钟兜底；
+        // 若次日 00:05 的跨天临界点更早，就提前到那一刻——
+        // 否则快照过期后桌面会挂着昨天的数字直到兜底刷新。
+        completion(Timeline(entries: [entry], policy: .after(Self.nextRefresh(after: now))))
+    }
+
+    /// 下一次刷新时刻。
+    static func nextRefresh(after now: Date) -> Date {
+        let calendar = Calendar.current
+        let fallback = calendar.date(byAdding: .minute, value: 15, to: now)
+            ?? now.addingTimeInterval(15 * 60)
+
+        guard
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)),
+            let boundary = calendar.date(byAdding: .minute, value: 5, to: tomorrow),
+            boundary < fallback
+        else {
+            return fallback
+        }
+        return boundary
     }
 }
 
