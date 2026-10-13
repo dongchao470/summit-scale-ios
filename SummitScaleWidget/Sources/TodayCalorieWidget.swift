@@ -16,12 +16,20 @@ struct TodayProvider: TimelineProvider {
     func getSnapshot(in context: Context, completion: @escaping (TodayEntry) -> Void) {
         // 桌面预览 / widget 图库走占位数据，别显示空态。
         let snapshot = WidgetBridge.read() ?? (context.isPreview ? .placeholder : nil)
+        WidgetDiagnostics.recordSnapshotRequest(snapshotMissing: snapshot == nil, displaySize: context.displaySize)
         completion(TodayEntry(date: Date(), snapshot: snapshot))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
         let now = Date()
-        let entry = TodayEntry(date: now, snapshot: WidgetBridge.read())
+        let snapshot = WidgetBridge.read()
+        // 顺带把系统真正给到的尺寸写进容器：版式该按这个排，不是按 widget 外框推算。
+        WidgetDiagnostics.recordTimeline(
+            snapshotMissing: snapshot == nil,
+            displaySize: context.displaySize,
+            family: String(describing: context.family)
+        )
+        let entry = TodayEntry(date: now, snapshot: snapshot)
         // widget 自己只会「重读快照」，快照由主 App 写、由后台刷新补。
         // 所以这里只决定什么时候再读一次：常规 15 分钟兜底；
         // 若次日 00:05 的跨天临界点更早，就提前到那一刻——
