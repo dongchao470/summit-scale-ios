@@ -1,31 +1,39 @@
 import SwiftUI
 import WidgetKit
 
-/// 小组件视图（方案 A · 环）。
+/// 小组件视图（方案 A · 环，收紧版）。
 ///
-/// 所有尺寸都按「内容区」算，不靠 GeometryReader 按比例分配：
-/// - 小号 158×158，系统四周各留 16pt → 内容区 126×126
-/// - 中号 338×158 → 内容区 306×126
-/// 每一行给固定行高，余量交给弹性 Spacer 吸收，这样字号放大、数字变长都不会互相挤。
-/// （上一版就是按比例分配，元素挤成一团，看起来像错位。）
+/// 尺寸策略：**不再假设内容区是 126×126**。
+/// 上一版按「158 − 16×2」算，真机上小号文字被挤出边界，说明系统留的边距比想象的大。
+/// 现在两条腿一起走：
+/// 1. 布局按更保守的值排（小号：行高 12 + 环 64 + 行高 12 = 88，留足余量）；
+/// 2. 右下角用 8pt 小字画出系统真正给到的内容区尺寸——装一次就能读到准确值，下次照它精调。
 struct TodayWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: TodayEntry
 
     var body: some View {
-        Group {
-            if let snapshot = entry.snapshot, snapshot.isToday {
-                switch family {
-                case .systemMedium:
-                    MediumLayout(snapshot: snapshot)
-                default:
-                    SmallLayout(snapshot: snapshot)
+        GeometryReader { geo in
+            Group {
+                if let snapshot = entry.snapshot, snapshot.isToday {
+                    switch family {
+                    case .systemMedium:
+                        MediumLayout(snapshot: snapshot)
+                    default:
+                        SmallLayout(snapshot: snapshot)
+                    }
+                } else {
+                    EmptyLayout()
                 }
-            } else {
-                EmptyLayout()
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .overlay(alignment: .bottomTrailing) {
+                Text("\(Int(geo.size.width))×\(Int(geo.size.height))")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(Theme.tertiaryText)
+                    .opacity(0.55)
             }
         }
-        .widgetCanvas()
     }
 }
 
@@ -45,7 +53,7 @@ private extension View {
 
 // MARK: - 环
 
-/// 环形进度：底圈 + 渐变弧，中间放主数字。尺寸由外部给定，自己不做任何测量。
+/// 环形进度：底圈 + 渐变弧，中间放主数字。尺寸完全由外部给定，自己不做测量。
 private struct Ring: View {
     let snapshot: WidgetSnapshot
     let size: CGFloat
@@ -77,60 +85,63 @@ private struct Ring: View {
                 )
                 .rotationEffect(.degrees(-90))
 
-            VStack(spacing: -2) {
+            VStack(spacing: -1) {
                 Text(Fmt.kcal(abs(snapshot.remainingKcal)))
-                    .font(Theme.number(size * 0.29, weight: .bold))
+                    .font(Theme.number(size * 0.27, weight: .bold))
                     .monospacedDigit()
                     .foregroundColor(snapshot.isOverBudget ? Theme.warning : Theme.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                 Text(snapshot.isOverBudget ? "已超出" : "还可吃")
-                    .font(.system(size: size * 0.12, weight: .medium))
+                    .font(.system(size: max(8, size * 0.11), weight: .medium))
                     .foregroundColor(Theme.secondaryText)
                     .lineLimit(1)
             }
-            .padding(.horizontal, lineWidth + 2)
+            .padding(.horizontal, lineWidth + 3)
         }
         .frame(width: size, height: size)
     }
 }
 
-// MARK: - 小号（内容区 126×126）
+// MARK: - 小号（保守按内容区 100×100 也能放下）
 
 private struct SmallLayout: View {
     let snapshot: WidgetSnapshot
 
+    private var stepsText: String {
+        snapshot.steps.formatted(.number.precision(.fractionLength(0)))
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // 行高 14：标题 + 同步时间
             HStack(spacing: 4) {
                 Text("今日剩余")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(Theme.secondaryText)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Spacer(minLength: 0)
                 Text(WidgetClock.time(snapshot.savedAt))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
                     .monospacedDigit()
                     .foregroundColor(Theme.tertiaryText)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            .frame(height: 14)
+            .frame(height: 12)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 2)
 
-            Ring(snapshot: snapshot, size: 76, lineWidth: 9)
+            Ring(snapshot: snapshot, size: 64, lineWidth: 7)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 2)
 
-            // 行高 14：消耗 + 步数
             HStack(spacing: 0) {
                 footStat(symbol: "flame.fill", value: Fmt.kcal(snapshot.burnKcal))
-                Spacer(minLength: 8)
-                footStat(symbol: "figure.walk",
-                         value: snapshot.steps.formatted(.number.precision(.fractionLength(0))))
+                Spacer(minLength: 6)
+                footStat(symbol: "figure.walk", value: stepsText)
             }
-            .frame(height: 14)
+            .frame(height: 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -138,54 +149,56 @@ private struct SmallLayout: View {
     private func footStat(symbol: String, value: String) -> some View {
         HStack(spacing: 3) {
             Image(systemName: symbol)
-                .font(.system(size: 9, weight: .bold))
+                .font(.system(size: 8, weight: .bold))
                 .foregroundColor(Theme.accent)
             Text(value)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .monospacedDigit()
                 .foregroundColor(Theme.secondaryText)
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 }
 
-// MARK: - 中号（内容区 306×126）
+// MARK: - 中号
 
 private struct MediumLayout: View {
     let snapshot: WidgetSnapshot
 
     var body: some View {
         HStack(spacing: 0) {
-            Ring(snapshot: snapshot, size: 88, lineWidth: 10)
+            Ring(snapshot: snapshot, size: 76, lineWidth: 9)
 
-            Spacer(minLength: 14)
+            Spacer(minLength: 12)
 
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
                     Text("今日 · 目标 \(Fmt.kcal(snapshot.targetKcal)) kcal")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(Theme.secondaryText)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.7)
                     Spacer(minLength: 0)
                     Text("更新于 \(WidgetClock.time(snapshot.savedAt))")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                         .monospacedDigit()
                         .foregroundColor(Theme.tertiaryText)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
-                .frame(height: 14)
+                .frame(height: 12)
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 2)
 
                 HStack(spacing: 8) {
                     stat(symbol: "fork.knife", label: "摄入", value: Fmt.kcal(snapshot.intakeKcal))
                     Spacer(minLength: 8)
                     stat(symbol: "flame.fill", label: "消耗", value: Fmt.kcal(snapshot.burnKcal))
                 }
-                .frame(height: 32)
+                .frame(height: 28)
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 2)
 
                 HStack(spacing: 8) {
                     stat(symbol: "figure.walk", label: "步数",
@@ -194,24 +207,24 @@ private struct MediumLayout: View {
                     stat(symbol: "location.fill", label: "距离",
                          value: String(format: "%.1f km", snapshot.distanceKm))
                 }
-                .frame(height: 32)
+                .frame(height: 28)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func stat(symbol: String, label: String, value: String) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             Image(systemName: symbol)
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 9, weight: .bold))
                 .foregroundColor(Theme.accent)
-                .frame(width: 12)
+                .frame(width: 11)
             VStack(alignment: .leading, spacing: 0) {
                 Text(label)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 9, weight: .medium))
                     .foregroundColor(Theme.tertiaryText)
                 Text(value)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .monospacedDigit()
                     .foregroundColor(Theme.primaryText)
                     .lineLimit(1)
@@ -225,12 +238,12 @@ private struct MediumLayout: View {
 
 private struct EmptyLayout: View {
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Image(systemName: "mountain.2.fill")
-                .font(.system(size: 26, weight: .semibold))
+                .font(.system(size: 22, weight: .semibold))
                 .foregroundColor(Theme.track)
             Text("打开「山与秤」同步今日数据")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundColor(Theme.secondaryText)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
