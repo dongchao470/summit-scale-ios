@@ -1,10 +1,11 @@
 import SwiftUI
 import WidgetKit
 
-/// 小组件视图（方案 B · 双色双条）。
+/// 小组件视图（方案 B · 双色双条，严格按 v2.html 设计稿渲染）。
 ///
-/// 顶部大数字先给答案（还可吃），下面两条进度条分开回答「吃了多少 / 动了多少」：
-/// 橙色 = 摄入（相对目标），绿色 = 活动消耗（以 500kcal 为满格）。
+/// 小号：标题 → 40pt 大数字 → 两条「圆点 + 进度条 + 百分比」行。
+/// 中号：左侧大数字块（数字 / kcal / 橙色「还可吃」），右侧三行
+///       「圆点 + 进度条 + 绝对值」（摄入 / 消耗 / 步数，蓝色步数行）。
 /// 不用 GeometryReader 排整体，只在进度条内部用它算填充宽度（固定 6pt 高，安全）。
 struct TodayWidgetView: View {
     @Environment(\.widgetFamily) private var family
@@ -54,7 +55,13 @@ private struct Bar: View {
                 Capsule()
                     .fill(Theme.track)
                 Capsule()
-                    .fill(color)
+                    .fill(
+                        LinearGradient(
+                            colors: [color.opacity(0.85), color],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
                     .frame(width: max(0, geo.size.width * progress))
             }
         }
@@ -62,26 +69,67 @@ private struct Bar: View {
     }
 }
 
-// MARK: - 小号：大数字 + 双条
+/// 设计稿的进度行：圆点 6pt + 弹性条 + 右侧定宽数字（稿 .b-pct width:30）。
+private struct DotBarRow: View {
+    let dot: Color
+    let progress: Double
+    let trailing: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(dot)
+                .frame(width: 6, height: 6)
+            Bar(progress: progress, color: dot)
+            Text(trailing)
+                .font(.system(size: 10, weight: .semibold))
+                .monospacedDigit()
+                .foregroundColor(Theme.secondaryText)
+                .frame(width: 34, alignment: .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+    }
+}
+
+// MARK: - 摄入 / 消耗 / 步数 进度
+
+private enum WidgetProgress {
+    static func intake(_ s: WidgetSnapshot) -> Double {
+        guard s.targetKcal > 0 else { return 0 }
+        let v = s.intakeKcal / s.targetKcal
+        guard v.isFinite else { return 0 }
+        return min(max(v, 0), 1)
+    }
+
+    static func burn(_ s: WidgetSnapshot) -> Double {
+        let v = s.burnKcal / 500
+        guard v.isFinite else { return 0 }
+        return min(max(v, 0), 1)
+    }
+
+    static func steps(_ s: WidgetSnapshot) -> Double {
+        let v = s.steps / 10_000
+        guard v.isFinite else { return 0 }
+        return min(max(v, 0), 1)
+    }
+
+    static func pct(_ p: Double) -> String {
+        "\(Int((p * 100).rounded()))%"
+    }
+}
+
+private let barOrange = Color(red: 1.0, green: 0.624, blue: 0.263)   // #FF9F43
+private let barGreen = Color(red: 0.204, green: 0.827, blue: 0.600)   // #34D399
+private let barBlue = Color(red: 0.376, green: 0.647, blue: 0.980)    // #60A5FA
+
+// MARK: - 小号：标题 + 40pt 大数字 + 双进度行
 
 private struct SmallLayout: View {
     let snapshot: WidgetSnapshot
 
-    private var intakeProgress: Double {
-        guard snapshot.targetKcal > 0 else { return 0 }
-        let v = snapshot.intakeKcal / snapshot.targetKcal
-        guard v.isFinite else { return 0 }
-        return min(max(v, 0), 1)
-    }
-
-    private var burnProgress: Double {
-        let v = snapshot.burnKcal / 500
-        guard v.isFinite else { return 0 }
-        return min(max(v, 0), 1)
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(snapshot.isOverBudget ? "已超出" : "还可吃")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(Theme.secondaryText)
@@ -89,116 +137,80 @@ private struct SmallLayout: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(Fmt.kcal(abs(snapshot.remainingKcal)))
-                    .font(Theme.number(34, weight: .bold))
+                    .font(Theme.number(40, weight: .bold))
                     .foregroundColor(snapshot.isOverBudget ? Theme.warning : Theme.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                 Text("kcal")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(Theme.secondaryText)
             }
 
-            Bar(progress: intakeProgress, color: Color(uiColor: .systemOrange))
-            HStack(spacing: 4) {
-                Text("摄入 \(Fmt.kcal(snapshot.intakeKcal))")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(Theme.secondaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Spacer(minLength: 4)
-                Text("\(Int((intakeProgress * 100).rounded()))%")
-                    .font(.system(size: 10, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundColor(Theme.secondaryText)
-            }
-
-            Bar(progress: burnProgress, color: Theme.success)
-            HStack(spacing: 4) {
-                Text("消耗 \(Fmt.kcal(snapshot.burnKcal)) · \(Int(snapshot.steps))步")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(Theme.secondaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Spacer(minLength: 4)
-                Text("\(Int((burnProgress * 100).rounded()))%")
-                    .font(.system(size: 10, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundColor(Theme.secondaryText)
+            VStack(alignment: .leading, spacing: 7) {
+                DotBarRow(
+                    dot: barOrange,
+                    progress: WidgetProgress.intake(snapshot),
+                    trailing: WidgetProgress.pct(WidgetProgress.intake(snapshot))
+                )
+                DotBarRow(
+                    dot: barGreen,
+                    progress: WidgetProgress.burn(snapshot),
+                    trailing: WidgetProgress.pct(WidgetProgress.burn(snapshot))
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
     }
 }
 
-// MARK: - 中号：左侧大数字双条 + 右侧明细
+// MARK: - 中号：左侧大数字块 + 右侧三行进度（摄入 / 消耗 / 步数）
 
 private struct MediumLayout: View {
     let snapshot: WidgetSnapshot
 
-    private var intakeProgress: Double {
-        guard snapshot.targetKcal > 0 else { return 0 }
-        let v = snapshot.intakeKcal / snapshot.targetKcal
-        guard v.isFinite else { return 0 }
-        return min(max(v, 0), 1)
-    }
-
-    private var burnProgress: Double {
-        let v = snapshot.burnKcal / 500
-        guard v.isFinite else { return 0 }
-        return min(max(v, 0), 1)
-    }
-
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(snapshot.isOverBudget ? "已超出" : "还可吃")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(Theme.secondaryText)
-                    .lineLimit(1)
+        HStack(alignment: .center, spacing: 18) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(Fmt.kcal(abs(snapshot.remainingKcal)))
-                        .font(Theme.number(34, weight: .bold))
+                        .font(Theme.number(38, weight: .bold))
                         .foregroundColor(snapshot.isOverBudget ? Theme.warning : Theme.primaryText)
                         .lineLimit(1)
                         .minimumScaleFactor(0.5)
                     Text("kcal")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundColor(Theme.secondaryText)
                 }
-                Bar(progress: intakeProgress, color: Color(uiColor: .systemOrange))
-                Bar(progress: burnProgress, color: Theme.success)
+                Text(snapshot.isOverBudget ? "已超出" : "还可吃")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(barOrange)
+                    .lineLimit(1)
             }
-            .frame(width: 150, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(alignment: .leading, spacing: 0) {
-                statRow(label: "摄入", value: Fmt.kcal(snapshot.intakeKcal))
-                Spacer(minLength: 0)
-                statRow(label: "目标", value: Fmt.kcal(snapshot.targetKcal))
-                Spacer(minLength: 0)
-                statRow(label: "消耗", value: Fmt.kcal(snapshot.burnKcal))
-                Spacer(minLength: 0)
-                statRow(label: "步数", value: "\(Int(snapshot.steps))")
+            VStack(alignment: .leading, spacing: 9) {
+                DotBarRow(
+                    dot: barOrange,
+                    progress: WidgetProgress.intake(snapshot),
+                    trailing: Fmt.kcal(snapshot.intakeKcal)
+                )
+                DotBarRow(
+                    dot: barGreen,
+                    progress: WidgetProgress.burn(snapshot),
+                    trailing: Fmt.kcal(snapshot.burnKcal)
+                )
+                DotBarRow(
+                    dot: barBlue,
+                    progress: WidgetProgress.steps(snapshot),
+                    trailing: "\(Int(snapshot.steps))"
+                )
             }
-            .frame(maxHeight: .infinity)
-
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-    }
-
-    private func statRow(label: String, value: String) -> some View {
-        HStack(spacing: 4) {
-            Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(Theme.tertiaryText)
-            Spacer(minLength: 4)
-            Text(value)
-                .font(.system(size: 12, weight: .semibold))
-                .monospacedDigit()
-                .foregroundColor(Theme.primaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .padding(.horizontal, 20)
     }
 }
 
