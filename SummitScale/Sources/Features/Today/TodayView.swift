@@ -789,13 +789,26 @@ struct TodayView: View {
                     .font(.footnote)
                     .foregroundColor(.secondary)
             } else {
-                HStack(spacing: 8) {
+                // 2×2：四格挤在一行会糊，分两行每格都读得清。
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                    spacing: 8
+                ) {
                     StatTile(
                         title: "消耗",
                         value: Fmt.kcal(ledger?.burnKcal ?? 0),
                         unit: "kcal",
                         tint: Theme.accent,
                         symbol: "flame.fill"
+                    )
+                    StatTile(
+                        title: "步数",
+                        value: healthActivity.steps > 0
+                            ? healthActivity.steps.formatted(.number.precision(.fractionLength(0)))
+                            : "—",
+                        unit: "步",
+                        tint: Theme.accent,
+                        symbol: "figure.walk"
                     )
                     StatTile(
                         title: "条数",

@@ -354,38 +354,44 @@ final class HealthKitManager: ObservableObject {
             return
         }
         let calendar = Calendar.current
-        let start = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: Date()))!
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
+        let now = Date()
+        // 窗口收到最近 36 小时：够覆盖「昨夜」，又不会把前一夜的样本一起吞进来。
+        let start = now.addingTimeInterval(-36 * 3600)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: now, options: .strictStartDate)
+        // 今天 13:00 之后才结束的睡眠属于白天补觉，裁掉，不计入「昨夜」。
+        let noonCutoff = calendar.date(byAdding: .hour, value: 13, to: calendar.startOfDay(for: now)) ?? now
+        // 结束时间早于 24 小时前的也不算「昨夜」（昨晚没数据时宁可显示不出来，也不拿前夜顶）。
+        let freshness = now.addingTimeInterval(-24 * 3600)
 
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
-            // 只统计睡眠中（非 InBed）样本，重叠区间合并后求总时长。
+            // 只统计睡眠中（非 InBed）样本；先裁掉今天 13:00 之后的部分。
             let asleep = (samples as? [HKCategorySample])?.filter {
                 $0.value == HKCategoryValueSleepAnalysis.asleepCore.rawValue
                     || $0.value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue
                     || $0.value == HKCategoryValueSleepAnalysis.asleepREM.rawValue
             } ?? []
-            var seconds = 0.0
-            var intervals: [(Date, Date)] = asleep.map { ($0.startDate, $0.endDate) }
+            var intervals: [(Date, Date)] = asleep.compactMap { sample in
+                let end = min(sample.endDate, noonCutoff)
+                return end > sample.startDate ? (sample.startDate, end) : nil
+            }
             intervals.sort { $0.0 < $1.0 }
-            var currentStart: Date?
-            var currentEnd: Date?
+            // 重叠、相接、或中间只醒了不到 2 小时的样本，合成同一个「睡眠块」：
+            // 跨午夜切开的段能拼回来，iPhone 和手表同时写的样本也不会算两遍。
+            var blocks: [(start: Date, end: Date)] = []
             for (s, e) in intervals {
-                if let ce = currentEnd, s <= ce {
-                    // 与当前区间重叠或相接，扩展右端。
-                    if e > ce { currentEnd = e }
+                if let last = blocks.last, s.timeIntervalSince(last.end) <= 2 * 3600 {
+                    blocks[blocks.count - 1].end = max(last.end, e)
                 } else {
-                    // 收上一个区间。
-                    if let cs = currentStart, let ce = currentEnd {
-                        seconds += ce.timeIntervalSince(cs)
-                    }
-                    currentStart = s
-                    currentEnd = e
+                    blocks.append((s, e))
                 }
             }
-            if let cs = currentStart, let ce = currentEnd {
-                seconds += ce.timeIntervalSince(cs)
+            // 「昨夜」= 结束时间最近、且没超过 24 小时的那一块；只取这一块，不是所有块相加。
+            guard let block = blocks.filter({ $0.end >= freshness }).max(by: { $0.end < $1.end }) else {
+                Task { @MainActor in completion(nil) }
+                return
             }
-            Task { @MainActor in completion(seconds / 3600) }
+            let hours = block.end.timeIntervalSince(block.start) / 3600
+            Task { @MainActor in completion(hours) }
         }
         store.execute(query)
     }
@@ -417,23 +423,54 @@ final class HealthKitManager: ObservableObject {
         let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: .strictStartDate)
 
         let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, _ in
+            // 同一晚可能同时有 iPhone、手表、第三方 App 写的样本（内容重叠），
+            // 所以先按「归属哪天 + 哪种分期」分组并合并重叠区间，再累加，避免重复计入。
+            func mergedHours(_ ranges: [(Date, Date)]) -> Double {
+                let sorted = ranges.sorted { $0.0 < $1.0 }
+                var total = 0.0
+                var current: (Date, Date)?
+                for (s, e) in sorted {
+                    if let c = current, s <= c.1 {
+                        current = (c.0, max(c.1, e))
+                    } else {
+                        if let c = current { total += c.1.timeIntervalSince(c.0) }
+                        current = (s, e)
+                    }
+                }
+                if let c = current { total += c.1.timeIntervalSince(c.0) }
+                return total / 3600
+            }
+
             var byDay: [Date: SleepStageDay] = [:]
+            var buckets: [Date: [Int: [(Date, Date)]]] = [:]
             for sample in (samples as? [HKCategorySample]) ?? [] {
+                guard sample.endDate > sample.startDate else { continue }
+                let value = sample.value
                 let hours = sample.endDate.timeIntervalSince(sample.startDate) / 3600
                 guard hours > 0 else { continue }
+                let isAsleep = value == HKCategoryValueSleepAnalysis.asleepDeep.rawValue
+                    || value == HKCategoryValueSleepAnalysis.asleepREM.rawValue
+                    || value == HKCategoryValueSleepAnalysis.asleepCore.rawValue
+                    || value == HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+                guard isAsleep else { continue } // inBed / awake 不计入睡眠时长
                 let day = calendar.startOfDay(for: sample.endDate)
-                var rec = byDay[day] ?? SleepStageDay(day: day)
-                switch sample.value {
-                case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
-                    rec.deep += hours
-                case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
-                    rec.rem += hours
-                case HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-                     HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue:
-                    // 核心睡眠 +（旧设备无分期的）通用睡眠，都并入「浅睡」。
-                    rec.core += hours
-                default:
-                    break // inBed / awake 不计入睡眠时长
+                var byStage = buckets[day] ?? [:]
+                byStage[value, default: []].append((sample.startDate, sample.endDate))
+                buckets[day] = byStage
+            }
+            for (day, byStage) in buckets {
+                var rec = SleepStageDay(day: day)
+                for (value, ranges) in byStage {
+                    let hours = mergedHours(ranges)
+                    switch value {
+                    case HKCategoryValueSleepAnalysis.asleepDeep.rawValue:
+                        rec.deep += hours
+                    case HKCategoryValueSleepAnalysis.asleepREM.rawValue:
+                        rec.rem += hours
+                    default:
+                        // 核心睡眠 +（旧设备无分期的）通用睡眠，都并入「浅睡」。
+                        rec.core += hours
+                    }
                 }
                 byDay[day] = rec
             }

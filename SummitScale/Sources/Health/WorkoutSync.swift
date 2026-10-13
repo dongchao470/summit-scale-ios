@@ -85,7 +85,7 @@ enum WorkoutSync {
                 guard let w = workouts, let s = steps, let e = energy, let d = distance else { return }
                 var summary = insert(w)
                 summary.workoutCount = w.count
-                upsertDaily(steps: s, energy: e, distance: d, workoutDays: workoutDays(in: w), into: &summary)
+                upsertDaily(steps: s, energy: e, distance: d, workouts: w, into: &summary)
                 applyHeartRate(daily: heartRates ?? []) { workouts, days in
                     summary.heartRateWorkouts = workouts
                     summary.heartRateDays = days
@@ -211,11 +211,6 @@ enum WorkoutSync {
         return summary
     }
 
-    private static func workoutDays(in records: [HealthKitManager.WorkoutRecord]) -> Set<Date> {
-        let calendar = Calendar.current
-        return Set(records.map { calendar.startOfDay(for: $0.start) })
-    }
-
     // MARK: - 每日汇总
 
     /// 没有锻炼样本的日子，用当天的步数、活跃消耗、步行距离汇总成一条「日常活动」。
@@ -224,7 +219,7 @@ enum WorkoutSync {
         steps: [(day: Date, steps: Double)],
         energy: [(day: Date, kcal: Double)],
         distance: [(day: Date, kilometers: Double)],
-        workoutDays: Set<Date>,
+        workouts: [HealthKitManager.WorkoutRecord],
         into summary: inout Summary
     ) {
         let calendar = Calendar.current
@@ -235,11 +230,22 @@ enum WorkoutSync {
         let energyMap = byDay(energy.map { (day: $0.day, value: $0.kcal) })
         let distanceMap = byDay(distance.map { (day: $0.day, value: $0.kilometers) })
 
-        // 有锻炼样本的那天已经有记录了，不再叠加汇总，免得一天算两遍。
+        // 当天锻炼已经计过的消耗 / 距离 / 时长。日常活动汇总要把这块扣掉，
+        // 否则和锻炼条目加在一起就成了一天算两遍。
+        var workoutByDay: [Date: (kcal: Double, kilometers: Double, minutes: Double)] = [:]
+        for workout in workouts {
+            let day = calendar.startOfDay(for: workout.start)
+            var acc = workoutByDay[day] ?? (0, 0, 0)
+            acc.kcal += workout.kcal
+            acc.kilometers += workout.distanceKilometers
+            acc.minutes += max(workout.end.timeIntervalSince(workout.start) / 60, 0)
+            workoutByDay[day] = acc
+        }
+
+        // 有锻炼的日子同样要汇总：这天走了多少步、日常走动了多少，也是当天的一部分。
         let days = Set(stepMap.keys)
             .union(energyMap.keys)
             .union(distanceMap.keys)
-            .subtracting(workoutDays)
         guard !days.isEmpty else { return }
 
         let context = Persistence.shared.container.viewContext
@@ -254,22 +260,32 @@ enum WorkoutSync {
 
         for day in days.sorted() {
             let stepCount = stepMap[day] ?? 0
-            let kcal = energyMap[day] ?? 0
-            let kilometers = distanceMap[day] ?? 0
+            let workout = workoutByDay[day] ?? (0, 0, 0)
+            // 扣掉当天锻炼已经计过的消耗和距离，剩下的才算「日常活动」。
+            let kcal = max((energyMap[day] ?? 0) - workout.kcal, 0)
+            let kilometers = max((distanceMap[day] ?? 0) - workout.kilometers, 0)
             guard stepCount >= quietDaySteps || kcal >= quietDayKcal else { continue }
 
-            // 步数除 110 约等于走路分钟数；没有步数就用距离按 4.8 km/h 反推。
-            let minutes = stepCount > 0 ? stepCount / 110.0 : kilometers / 4.8 * 60
+            // 步数除 110 约等于走路分钟数；没有步数就用距离按 4.8 km/h 反推，再扣掉锻炼时长。
+            let walked = stepCount > 0 ? stepCount / 110.0 : kilometers / 4.8 * 60
+            let minutes = max(walked - workout.minutes, 0)
+            // 扣完什么都不剩（比如整天都在锻炼）就不插这条，免得堆一行全 0。
+            guard minutes > 0 || kilometers > 0.05 || kcal > 1 else { continue }
+            let note = workout.kcal > 0 || workout.kilometers > 0
+                ? "来自「健康」· 当日步数与活跃消耗汇总（已扣除当天锻炼）"
+                : "来自「健康」· 当日步数与活跃消耗汇总（这天没有锻炼样本）"
             let id = dailyID(for: day)
 
             if let entry = existing[id] {
                 let changed = abs(entry.kcal - kcal) > 0.5
                     || abs(entry.distanceKilometers - kilometers) > 0.05
                     || abs(entry.durationMinutes - minutes) > 1
+                    || entry.note != note
                 guard changed else { continue }
                 entry.kcal = kcal
                 entry.distanceKilometers = kilometers
                 entry.durationMinutes = minutes
+                entry.note = note
                 entry.createdAt = Date()
                 summary.dailyUpdated += 1
             } else {
@@ -282,7 +298,7 @@ enum WorkoutSync {
                 entry.distanceKilometers = kilometers
                 entry.elevationGainMeters = 0
                 entry.kcal = kcal
-                entry.note = "来自「健康」· 当日步数与活跃消耗汇总（这天没有锻炼样本）"
+                entry.note = note
                 entry.createdAt = Date()
                 entry.source = dailySource
                 entry.externalID = id
