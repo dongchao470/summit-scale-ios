@@ -21,41 +21,11 @@ struct TodayProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
         let now = Date()
-        let cached = WidgetBridge.read()
-        Task {
-            // 系统叫醒的是扩展进程自己，跟主 App 死没死无关，
-            // 所以先自己问一次 HealthKit——App 被划掉后桌面也能有新数字。
-            let health = await WidgetHealthReader.todayWithTimeout()
-            let entry = TodayEntry(date: now, snapshot: Self.merged(cached, with: health, now: now))
-            completion(Timeline(entries: [entry], policy: .after(Self.nextRefresh(after: now))))
-        }
-    }
-
-    /// 用 widget 自己查到的最新健康数，覆盖快照里对应的两个字段。
-    /// - 没有底稿（App 从没写过快照）：不拼。目标热量只有 App 知道，硬凑会显示「剩余 -800」这种假数字，
-    ///   不如老实提示去打开 App。
-    /// - 跨天：不拼。摄入与手动记录该由 App 重算，这里只负责健康那一半。
-    static func merged(
-        _ cached: WidgetSnapshot?,
-        with health: WidgetHealthReader.TodayHealth?,
-        now: Date
-    ) -> WidgetSnapshot? {
-        guard let cached else { return nil }
-        guard let health, cached.isToday else { return cached }
-        return WidgetSnapshot(
-            savedAt: now,
-            dayStart: cached.dayStart,
-            intakeKcal: cached.intakeKcal,
-            targetKcal: cached.targetKcal,
-            burnKcal: health.activeKcal + cached.manualBurnKcal,
-            steps: health.steps,
-            distanceKm: cached.distanceKm,
-            exerciseMinutes: cached.exerciseMinutes,
-            weightKg: cached.weightKg,
-            targetWeightKg: cached.targetWeightKg,
-            healthBurnKcal: health.activeKcal,
-            manualBurnKcal: cached.manualBurnKcal
-        )
+        // 数据由主 App 写进共享容器（前台进今日页时写、退后台时由后台刷新补）。
+        // widget 这边只决定「什么时候再读一次」：常规 15 分钟兜底；
+        // 若次日 00:05 的跨天点更早，就提前到那一刻，免得桌面整晚挂着昨天的数字。
+        let entry = TodayEntry(date: now, snapshot: WidgetBridge.read())
+        completion(Timeline(entries: [entry], policy: .after(Self.nextRefresh(after: now))))
     }
 
     /// 下一次刷新时刻。
