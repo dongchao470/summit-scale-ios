@@ -11,15 +11,6 @@ import WidgetKit
 /// 3. 间距走 snap4() 吸到 4 的倍数；字号用 clamp() 按边长比例夹上下限，随尺寸连续变化。
 /// 4. 层级：环心主数字（最大最粗） > 进度环 > 次级统计 > 说明文字与时间。
 ///    颜色只取 Theme，无渐变背景、无阴影；数据新旧靠 savedAt 显示的「更新于 HH:mm」体现。
-/// 扩展自己的版本号，直接画在 widget 上。
-///
-/// 为什么要在界面上暴露这种东西：排查「桌面一片空白」时，最要紧的是先分清
-/// 「新包根本没装上」和「装上了但扩展没被系统加载」——有这行字，装上就能自证。
-private enum WidgetBuild {
-    static let short: String =
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
-}
-
 struct TodayWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: TodayEntry
@@ -206,8 +197,8 @@ private struct SmallLayout: View {
                     .foregroundColor(Theme.tertiaryText)
                     .accessibilityHidden(true)
             }
-            // 小号只放「HH:mm」，交代这份数字是几点同步的；后面缀扩展版本号，便于确认新包是否真装上。
-            Text("\(WidgetClock.time(snapshot.savedAt)) · \(WidgetBuild.short)")
+            // 小号只放「HH:mm」，交代这份数字是几点同步的。
+            Text(WidgetClock.time(snapshot.savedAt))
                 .font(Theme.number(titleSize * 0.95, weight: .medium))
                 .foregroundColor(Theme.tertiaryText)
                 .lineLimit(1)
@@ -310,7 +301,7 @@ private struct MediumLayout: View {
                     .foregroundColor(Theme.tertiaryText)
                     .accessibilityHidden(true)
             }
-            Text("更新于 \(WidgetClock.time(snapshot.savedAt)) · \(WidgetBuild.short)")
+            Text("更新于 \(WidgetClock.time(snapshot.savedAt))")
                 .font(.system(size: labelSize, weight: .medium))
                 .foregroundColor(Theme.tertiaryText)
                 .lineLimit(1)
@@ -386,11 +377,6 @@ private struct EmptyLayout: View {
                 .lineLimit(2)
                 .minimumScaleFactor(0.6)
                 .fixedSize(horizontal: false, vertical: true)
-
-            // 空态也标版本：如果连这行都不显示，说明扩展压根没被系统加载，而不是「没数据」。
-            Text("扩展 \(WidgetBuild.short)")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(Theme.tertiaryText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 8)

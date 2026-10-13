@@ -55,8 +55,6 @@ enum BackgroundRefresh {
     }
 
     /// 拉健康今日活动 → 合并进旧快照 → 写回共享容器。返回是否真的写了。
-    /// HealthKitManager 是主 actor 隔离的，这里跟着它走——后台刷新本来也不争这点时间。
-    @MainActor
     private static func refreshSnapshot() async -> Bool {
         guard HealthKitManager.shared.enabledByUser else { return false }
 
