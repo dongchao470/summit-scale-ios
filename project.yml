@@ -32,8 +32,8 @@ targets:
       base:
         PRODUCT_NAME: SummitScale
         PRODUCT_BUNDLE_IDENTIFIER: com.dongchao470.summit-scale
-        MARKETING_VERSION: "0.6.2"
-        CURRENT_PROJECT_VERSION: "36"
+        MARKETING_VERSION: "0.6.3"
+        CURRENT_PROJECT_VERSION: "37"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: "NO"
@@ -45,8 +45,8 @@ targets:
       properties:
         CFBundleDisplayName: 山与秤
         CFBundleName: SummitScale
-        CFBundleShortVersionString: "0.6.2"
-        CFBundleVersion: "36"
+        CFBundleShortVersionString: "0.6.3"
+        CFBundleVersion: "37"
         LSRequiresIPhoneOS: true
         UIUserInterfaceStyle: Automatic
         ITSAppUsesNonExemptEncryption: false
@@ -93,8 +93,8 @@ targets:
       base:
         PRODUCT_NAME: SummitScaleWidget
         PRODUCT_BUNDLE_IDENTIFIER: com.dongchao470.summit-scale.widget
-        MARKETING_VERSION: "0.6.2"
-        CURRENT_PROJECT_VERSION: "36"
+        MARKETING_VERSION: "0.6.3"
+        CURRENT_PROJECT_VERSION: "37"
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: SummitScaleWidget/Resources/Info.plist
@@ -105,8 +105,11 @@ targets:
       properties:
         CFBundleDisplayName: 山与秤
         CFBundleName: SummitScaleWidget
-        CFBundleShortVersionString: "0.6.2"
-        CFBundleVersion: "36"
+        CFBundleShortVersionString: "0.6.3"
+        CFBundleVersion: "37"
+        # 扩展要自己读健康数据（这样 App 被划掉也能刷新）；扩展自己不能弹授权框，
+        # 用户在主 App 里授权一次即可，这里只是满足 HealthKit 对使用声明的硬要求。
+        NSHealthShareUsageDescription: 读取「健康」里的步数与活动消耗，用于在桌面小组件上显示今日进度。
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
