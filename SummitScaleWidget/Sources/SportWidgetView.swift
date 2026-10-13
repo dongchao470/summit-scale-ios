@@ -1,7 +1,7 @@
 import SwiftUI
 import WidgetKit
 
-/// 今日运动小组件（X 款：消耗大数 + 步数/活动两条）。
+/// 今日运动小组件（X 款：消耗大数 + 步数/活动两条；中号加一行距离）。
 ///
 /// 数据口径：与今日热量组件同一份快照，全部字段健康优先、本地兜底：
 ///   - 消耗 = 快照 burnKcal（健康活跃消耗 + 手动记录；没健康时退回本地今日条目合计）
@@ -9,42 +9,44 @@ import WidgetKit
 ///   - 活动 = 快照 exerciseMinutes（健康健身环的「活动」分钟；没健康时是本地锻炼时长合计）
 ///   - 距离 = 快照 distanceKm（健康优先，中号第三行用）
 /// 四项全 0 → 切躺平小人缺省图，不拿假数字糊弄。
+///
+/// 结构刻意与 TodayWidgetView 保持一致：`body` 里裸 `switch family`，
+/// 不把 family 分支塞进 `if #available` —— 之前那样写会让 WidgetKit 枚举预览时
+/// 拿不到稳定视图类型，导致组件在「添加小组件」里被静默丢掉。
 struct SportWidgetView: View {
+    @Environment(\.widgetFamily) private var family
     let entry: TodayEntry
-
-    private var snapshot: WidgetSnapshot? {
-        guard let snap = entry.snapshot, snap.isToday else { return nil }
-        return snap
-    }
 
     var body: some View {
         Group {
-            if let snapshot {
-                familyView(snapshot)
+            if let snapshot = entry.snapshot, snapshot.isToday {
+                switch family {
+                case .systemMedium:
+                    SportMediumLayout(snapshot: snapshot)
+                default:
+                    SportSmallLayout(snapshot: snapshot)
+                }
             } else {
                 EmptySportView()
             }
         }
-        .modifier(SportContainerBackground())
+        .widgetCanvas()
+        .onAppear { WidgetDiagnostics.recordViewRendered() }
     }
+}
 
+// MARK: - 画布
+
+private extension View {
+    /// iOS 17 起 widget 必须自己声明容器背景；iOS 16 保留系统默认材质。
     @ViewBuilder
-    private func familyView(_ snapshot: WidgetSnapshot) -> some View {
-        if #available(iOS 17.0, *) {
-            switch family {
-            case .systemMedium: SportMediumLayout(snapshot: snapshot)
-            default: SportSmallLayout(snapshot: snapshot)
-            }
+    func widgetCanvas() -> some View {
+        if #available(iOSApplicationExtension 17.0, *) {
+            containerBackground(for: .widget) { Theme.cardBackground }
         } else {
-            switch family {
-            case .systemMedium: SportMediumLayout(snapshot: snapshot)
-            default: SportSmallLayout(snapshot: snapshot)
-            }
+            self
         }
     }
-
-    // 系统按 widget 所在槽位给 family；这里只在真正拿到中号时用中号版式。
-    @Environment(\.widgetFamily) private var family
 }
 
 // MARK: - 小号
@@ -71,7 +73,7 @@ private struct SportSmallLayout: View {
                 }
 
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(Int(snapshot.burnKcal) >= 0 ? "\(Int(snapshot.burnKcal))" : "0")
+                    Text("\(max(0, Int(snapshot.burnKcal)))")
                         .font(Theme.number(38, weight: .bold))
                         .foregroundColor(Theme.primaryText)
                         .minimumScaleFactor(0.5)
@@ -178,12 +180,13 @@ private struct EmptySportView: View {
                 .foregroundColor(Theme.secondaryText)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(12)
     }
 }
 
-// MARK: - 行组件
+// MARK: - 进度点行
 
-/// 一行：圆点 + 标识 + 数值 + 进度条。
+/// 一行「圆点 + 标签 + 数值 + 细进度条」，与热量组件同款视觉。
 private struct SportDotRow: View {
     let color: Color
     let label: String
@@ -191,55 +194,36 @@ private struct SportDotRow: View {
     let progress: Double
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             Circle()
                 .fill(color)
                 .frame(width: 6, height: 6)
             Text(label)
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundColor(Theme.secondaryText)
-            SportBar(progress: progress, color: color)
+                .frame(width: 26, alignment: .leading)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Theme.track)
+                    Capsule()
+                        .fill(color)
+                        .frame(width: max(3, geo.size.width * min(1, max(0, progress))))
+                }
+            }
+            .frame(height: 6)
             Text(value)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(Theme.secondaryText)
+                .foregroundColor(Theme.primaryText)
                 .monospacedDigit()
-                .frame(width: 40, alignment: .trailing)
+                .frame(minWidth: 34, alignment: .trailing)
         }
     }
 }
 
-/// 细进度条。
-private struct SportBar: View {
-    let progress: Double
-    let color: Color
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Theme.secondaryText.opacity(0.2))
-                Capsule()
-                    .fill(color)
-                    .frame(width: max(0, min(1, progress)) * geo.size.width)
-            }
-        }
-        .frame(height: 6)
-    }
-}
-
-/// 更新时间小字（与热量组件同款）。
-private func updatedLabel(_ snapshot: WidgetSnapshot) -> Text {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "zh_CN")
-    formatter.dateFormat = "HH:mm"
-    return Text("更新 \(formatter.string(from: snapshot.savedAt))")
-        .font(.system(size: 9, weight: .medium))
-        .foregroundColor(Theme.secondaryText)
-}
-
-private let barOrange = Color(red: 1.0, green: 0.62, blue: 0.26)   // #FF9F43
 private let barGreen = Color(red: 0.20, green: 0.83, blue: 0.60)   // #34D399
 private let barBlue = Color(red: 0.376, green: 0.647, blue: 0.980) // #60A5FA
+private let barOrange = Theme.accentOrange
 
 // MARK: - Widget 注册
 
@@ -251,18 +235,5 @@ struct SportTodayWidget: Widget {
         .configurationDisplayName("今日运动")
         .description("消耗、步数与活动分钟，动没动一眼就知道。")
         .supportedFamilies([.systemSmall, .systemMedium])
-    }
-}
-
-// MARK: - 容器背景
-
-/// iOS 17 起 widget 必须自己声明容器背景；iOS 16 保留系统默认材质。
-private struct SportContainerBackground: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOSApplicationExtension 17.0, *) {
-            content.containerBackground(for: .widget) { Theme.cardBackground }
-        } else {
-            content
-        }
     }
 }
