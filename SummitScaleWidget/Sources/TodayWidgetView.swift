@@ -74,12 +74,20 @@ private struct DotBarRow: View {
     let dot: Color
     let progress: Double
     let trailing: String
+    /// 可选的行首标识文字（设计稿上没有，用户加要的）。
+    var label: String? = nil
 
     var body: some View {
         HStack(spacing: 7) {
             Circle()
                 .fill(dot)
                 .frame(width: 6, height: 6)
+            if let label {
+                Text(label)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(Theme.secondaryText)
+                    .lineLimit(1)
+            }
             Bar(progress: progress, color: dot)
             Text(trailing)
                 .font(.system(size: 10, weight: .semibold))
@@ -123,6 +131,21 @@ private let barOrange = Color(red: 1.0, green: 0.624, blue: 0.263)   // #FF9F43
 private let barGreen = Color(red: 0.204, green: 0.827, blue: 0.600)   // #34D399
 private let barBlue = Color(red: 0.376, green: 0.647, blue: 0.980)    // #60A5FA
 
+/// 更新时间用的 "HH:mm"（Fmt.stamp 带日期，小组件里太占地方）。
+private let updateTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "zh_CN")
+    f.dateFormat = "HH:mm"
+    return f
+}()
+
+/// 一行小字「更新 13:09」。
+private func updatedLabel(_ snapshot: WidgetSnapshot) -> Text {
+    Text("更新 \(updateTimeFormatter.string(from: snapshot.savedAt))")
+        .font(.system(size: 9, weight: .medium))
+        .foregroundColor(Theme.secondaryText)
+}
+
 // MARK: - 小号：标题 + 40pt 大数字 + 双进度行
 
 private struct SmallLayout: View {
@@ -130,10 +153,15 @@ private struct SmallLayout: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(snapshot.isOverBudget ? "已超出" : "还可吃")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(Theme.secondaryText)
-                .lineLimit(1)
+            HStack(alignment: .firstTextBaseline) {
+                Text(snapshot.isOverBudget ? "已超出" : "还可吃")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Theme.secondaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                updatedLabel(snapshot)
+                    .lineLimit(1)
+            }
 
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(Fmt.kcal(abs(snapshot.remainingKcal)))
@@ -150,12 +178,14 @@ private struct SmallLayout: View {
                 DotBarRow(
                     dot: barOrange,
                     progress: WidgetProgress.intake(snapshot),
-                    trailing: WidgetProgress.pct(WidgetProgress.intake(snapshot))
+                    trailing: WidgetProgress.pct(WidgetProgress.intake(snapshot)),
+                    label: "摄入"
                 )
                 DotBarRow(
                     dot: barGreen,
                     progress: WidgetProgress.burn(snapshot),
-                    trailing: WidgetProgress.pct(WidgetProgress.burn(snapshot))
+                    trailing: WidgetProgress.pct(WidgetProgress.burn(snapshot)),
+                    label: "消耗"
                 )
             }
         }
@@ -206,6 +236,9 @@ private struct MediumLayout: View {
                     progress: WidgetProgress.steps(snapshot),
                     trailing: "\(Int(snapshot.steps))"
                 )
+                updatedLabel(snapshot)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .frame(maxWidth: .infinity)
         }
