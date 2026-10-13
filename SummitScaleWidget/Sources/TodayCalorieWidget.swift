@@ -21,10 +21,11 @@ struct TodayProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
         let now = Date()
-        // 数据由主 App 写进共享容器（前台进今日页时写、退后台时由后台刷新补）。
-        // widget 这边只决定「什么时候再读一次」：常规 15 分钟兜底；
-        // 若次日 00:05 的跨天点更早，就提前到那一刻，免得桌面整晚挂着昨天的数字。
         let entry = TodayEntry(date: now, snapshot: WidgetBridge.read())
+        // widget 自己只会「重读快照」，快照由主 App 写、由后台刷新补。
+        // 所以这里只决定什么时候再读一次：常规 15 分钟兜底；
+        // 若次日 00:05 的跨天临界点更早，就提前到那一刻——
+        // 否则快照过期后桌面会挂着昨天的数字直到兜底刷新。
         completion(Timeline(entries: [entry], policy: .after(Self.nextRefresh(after: now))))
     }
 
