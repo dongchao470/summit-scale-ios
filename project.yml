@@ -32,8 +32,8 @@ targets:
       base:
         PRODUCT_NAME: SummitScale
         PRODUCT_BUNDLE_IDENTIFIER: com.dongchao470.summit-scale
-        MARKETING_VERSION: "0.6.8"
-        CURRENT_PROJECT_VERSION: "42"
+        MARKETING_VERSION: "0.6.9"
+        CURRENT_PROJECT_VERSION: "43"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: "NO"
@@ -45,8 +45,8 @@ targets:
       properties:
         CFBundleDisplayName: 山与秤
         CFBundleName: SummitScale
-        CFBundleShortVersionString: "0.6.8"
-        CFBundleVersion: "42"
+        CFBundleShortVersionString: "0.6.9"
+        CFBundleVersion: "43"
         LSRequiresIPhoneOS: true
         UIUserInterfaceStyle: Automatic
         ITSAppUsesNonExemptEncryption: false
@@ -67,8 +67,6 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         NSHealthShareUsageDescription: 读取「健康」里的体重、步数、锻炼、睡眠和心率记录，用于趋势分析和热量换算，数据只在你的手机上处理。
         NSHealthUpdateUsageDescription: 把本 App 记录的体重写入「健康」，保持两边一致。
-        # 锁屏实时活动：没有这个键，Activity.request 会直接抛异常。
-        NSSupportsLiveActivities: true
         # 后台刷新：退到后台后系统仍会按自己的节奏唤醒 App 更新 widget 快照。
         # 不加 UIBackgroundModes 的话 BGTaskScheduler.submit 会报不可用。
         UIBackgroundModes:
@@ -93,8 +91,8 @@ targets:
       base:
         PRODUCT_NAME: SummitScaleWidget
         PRODUCT_BUNDLE_IDENTIFIER: com.dongchao470.summit-scale.widget
-        MARKETING_VERSION: "0.6.8"
-        CURRENT_PROJECT_VERSION: "42"
+        MARKETING_VERSION: "0.6.9"
+        CURRENT_PROJECT_VERSION: "43"
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: "NO"
         INFOPLIST_FILE: SummitScaleWidget/Resources/Info.plist
@@ -105,8 +103,8 @@ targets:
       properties:
         CFBundleDisplayName: 山与秤
         CFBundleName: SummitScaleWidget
-        CFBundleShortVersionString: "0.6.8"
-        CFBundleVersion: "42"
+        CFBundleShortVersionString: "0.6.9"
+        CFBundleVersion: "43"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
