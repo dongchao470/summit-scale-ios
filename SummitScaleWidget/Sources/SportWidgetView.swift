@@ -25,7 +25,7 @@ struct SportWidgetView: View {
                 EmptySportView()
             }
         }
-        .containerBackground(for: .widget) { Color.clear }
+        .modifier(SportContainerBackground())
     }
 
     @ViewBuilder
@@ -251,5 +251,18 @@ struct SportTodayWidget: Widget {
         .configurationDisplayName("今日运动")
         .description("消耗、步数与活动分钟，动没动一眼就知道。")
         .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+// MARK: - 容器背景
+
+/// iOS 17 起 widget 必须自己声明容器背景；iOS 16 保留系统默认材质。
+private struct SportContainerBackground: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOSApplicationExtension 17.0, *) {
+            content.containerBackground(for: .widget) { Theme.cardBackground }
+        } else {
+            content
+        }
     }
 }
