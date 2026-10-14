@@ -12,5 +12,9 @@
 	<array>
 		<string>group.com.dongchao470.summit-scale</string>
 	</array>
+	<key>com.apple.developer.healthkit</key>
+	<true/>
+	<key>com.apple.developer.healthkit.access</key>
+	<array/>
 </dict>
 </plist>

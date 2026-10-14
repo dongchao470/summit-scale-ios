@@ -22,19 +22,66 @@ struct TodayProvider: TimelineProvider {
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
         let now = Date()
-        let snapshot = WidgetBridge.read()
-        // 顺带把系统真正给到的尺寸写进容器：版式该按这个排，不是按 widget 外框推算。
-        WidgetDiagnostics.recordTimeline(
-            snapshotMissing: snapshot == nil,
-            displaySize: context.displaySize,
-            family: String(describing: context.family)
-        )
-        let entry = TodayEntry(date: now, snapshot: snapshot)
-        // widget 自己只会「重读快照」，快照由主 App 写、由后台刷新补。
-        // 所以这里只决定什么时候再读一次：常规 15 分钟兜底；
-        // 若次日 00:05 的跨天临界点更早，就提前到那一刻——
-        // 否则快照过期后桌面会挂着昨天的数字直到兜底刷新。
-        completion(Timeline(entries: [entry], policy: .after(Self.nextRefresh(after: now))))
+        let displaySize = context.displaySize
+        let family = String(describing: context.family)
+
+        // 关键：扩展在这里「自己直接读健康」，绕开 BGAppRefresh 不被按时叫醒的问题。
+        // 之前只有主 App 打开时才写快照，所以桌面组件必须开 App 才更新。
+        Task {
+            let stored = WidgetBridge.read()
+            let merged = await Self.mergedWithHealth(stored)
+
+            WidgetDiagnostics.recordTimeline(
+                snapshotMissing: merged == nil,
+                displaySize: displaySize,
+                family: family
+            )
+            let entry = TodayEntry(date: now, snapshot: merged)
+            // 15 分钟兜底 + 若次日 00:05 的跨天临界点更早则提前，
+            // 免得快照过期后桌面挂着昨天的数字。
+            completion(Timeline(entries: [entry], policy: .after(Self.nextRefresh(after: now))))
+        }
+    }
+
+    /// 把「刚才读到的健康今日数据」合并进共享快照。
+    ///
+    /// - 快照存在：用健康的步数 / 活跃消耗 / 锻炼分钟 / 距离覆盖对应字段，
+    ///   摄入、目标、手动运动等 App 侧数据保持不动（widget 读不到 CoreData）。
+    /// - 快照不存在但健康读到了：用健康数据拼一份最小快照，至少能显示运动数字。
+    /// - 健康读不到（未授权 / TrollStore 未签名 entitlement 不被信任）：原样返回快照，绝不比原来差。
+    static func mergedWithHealth(_ stored: WidgetSnapshot?) async -> WidgetSnapshot? {
+        let activity = await WidgetHealthReader.fetchTodayActivity()
+        guard let activity else { return stored }
+
+        let today = Calendar.current.startOfDay(for: Date())
+
+        guard var snapshot = stored, snapshot.dayStart == today else {
+            // 没有今天的快照：用健康数据凑一份，摄入 / 目标等留给 App 下次补。
+            return WidgetSnapshot(
+                savedAt: Date(),
+                dayStart: today,
+                intakeKcal: 0,
+                targetKcal: stored?.targetKcal ?? 0,
+                burnKcal: activity.activeKcal,
+                steps: Double(activity.steps),
+                distanceKm: activity.distanceKm,
+                exerciseMinutes: Double(activity.exerciseMinutes),
+                weightKg: stored?.weightKg,
+                targetWeightKg: stored?.targetWeightKg,
+                healthBurnKcal: activity.activeKcal,
+                manualBurnKcal: 0
+            )
+        }
+
+        // 用健康值覆盖「健康来源」的字段，手动记录那半保持快照里的原值。
+        let manualBurn = snapshot.manualBurnKcal
+        snapshot.steps = Double(activity.steps)
+        snapshot.healthBurnKcal = activity.activeKcal
+        snapshot.burnKcal = activity.activeKcal + manualBurn
+        snapshot.exerciseMinutes = Double(activity.exerciseMinutes)
+        snapshot.distanceKm = activity.distanceKm
+        snapshot.savedAt = Date()
+        return snapshot
     }
 
     /// 下一次刷新时刻。
