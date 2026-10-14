@@ -118,8 +118,24 @@ final class HealthKitManager: ObservableObject {
 
     /// 补问新增的权限类型；已经决定过的类型系统不会重复弹窗。
     /// 返回是否走完授权流程（HealthKit 不告诉 App 用户是否拒绝读权限，只能靠查询结果判断）。
+    ///
+    /// 性能：`requestAuthorization` 是阻塞式 XPC，每次开 App 都调会白白等好几秒。
+    /// 先问 `getRequestStatusForAuthorization`——已决定过（.unnecessary）就直接返回，
+    /// 只有真有新类型没决定时才走真正的授权请求（会弹窗）。
     func ensureAccess() async -> Bool {
         guard HKHealthStore.isHealthDataAvailable() else { return false }
+
+        let status: HKAuthorizationRequestStatus = await withCheckedContinuation { cont in
+            store.getRequestStatusForAuthorization(toShare: writeTypes, read: readTypes) { status, _ in
+                cont.resume(returning: status)
+            }
+        }
+        if status == .unnecessary {
+            authorized = true
+            errorMessage = nil
+            return true
+        }
+
         do {
             try await store.requestAuthorization(toShare: writeTypes, read: readTypes)
             authorized = true
@@ -135,7 +151,13 @@ final class HealthKitManager: ObservableObject {
         // 确定授权状态只能通过请求一次得知；静默请求不弹窗（已授权过的话）。
         store.getRequestStatusForAuthorization(toShare: writeTypes, read: readTypes) { [weak self] status, _ in
             Task { @MainActor in
-                self?.authorized = (status == .unnecessary)
+                guard let self else { return }
+                self.authorized = (status == .unnecessary)
+                // 冷启动时补注册体重观察器：weightSync 开关只在「切换开关」那一刻注册过，
+                // App 重开后没人注册，健康里改体重就不会自动同步回来。
+                if self.authorized, self.weightSync {
+                    self.observeWeight()
+                }
             }
         }
     }

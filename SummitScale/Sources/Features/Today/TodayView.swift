@@ -302,9 +302,13 @@ struct TodayView: View {
             }
             .onChange(of: widgetSignature) { _ in publishWidgetSnapshot() }
             .onReceive(NotificationCenter.default.publisher(for: .healthWeightChanged)) { note in
+                // 健康里改了体重：不能只更新内存值，得落到 WeightEntry 表，
+                // 否则体重卡和趋势页读的还是旧记录（原先只写 @State，那个值从没被读过）。
+                // 走 importWeight 的 externalID 去重，同一条健康样本不会重复插。
                 if let kg = note.userInfo?["kilograms"] as? Double {
                     healthWeightKg = kg
                 }
+                Task { _ = await HealthStore.shared.importWeight(days: 1) }
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
